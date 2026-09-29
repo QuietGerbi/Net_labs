@@ -79,14 +79,12 @@ class MulticastDiscovery:
                 raise ValueError(f"Некорректный IP-адрес: {group_addr}")
 
         if is_ipv6:
-            # IPv6 multicast — все адреса начинаются с 0xff
             if packed[0] != 0xFF:
                 raise ValueError(
                     f"Адрес {group_addr} не является multicast "
                     f"(IPv6 multicast должен начинаться с ff00::/8)"
                 )
         else:
-            # IPv4 multicast — старшие 4 бита должны быть 1110 (224.0.0.0/4)
             first_octet = packed[0]
             if not (0xE0 <= first_octet <= 0xEF):
                 raise ValueError(
