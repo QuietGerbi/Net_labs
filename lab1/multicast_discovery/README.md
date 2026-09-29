@@ -29,7 +29,7 @@ multicast_discovery/
 ## Требования
 
 - Python 3.7+
-- ОС: macOS
+- ОС: macOS/Windows/Linux
 
 ## Запуск
 
