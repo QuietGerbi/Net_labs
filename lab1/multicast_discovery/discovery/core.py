@@ -12,23 +12,26 @@ class MulticastDiscovery:
     PEER_TIMEOUT = 6.0
     BUFFER_SIZE = 1024
 
+    IPV4_MULTICAST_MIN = "224.0.0.0"
+    IPV4_MULTICAST_MAX = "239.255.255.255"
+
     def __init__(self, group_addr: str, port: int = 60000):
+        if isinstance(port, bool) or not isinstance(port, int):
+            raise TypeError(
+                f"Порт должен быть int, получено {type(port).__name__}"
+            )
+        
+        if not (1 <= port <= 65535):
+            raise ValueError(
+                f"Некорректный порт: {port}. Допустимый диапазон: 1..65535"
+            )
+        
         self.group_addr = group_addr
         self.port = port
 
         self.instance_id = str(uuid.uuid4())
 
-        try:
-            socket.inet_pton(socket.AF_INET, group_addr)
-            self.family = socket.AF_INET
-            self.is_ipv6 = False
-        except OSError:
-            try:
-                socket.inet_pton(socket.AF_INET6, group_addr)
-                self.family = socket.AF_INET6
-                self.is_ipv6 = True
-            except OSError:
-                raise ValueError(f"Некорректный multicast адрес: {group_addr}")
+        self.family, self.is_ipv6 = self._validate_group_addr(group_addr)
 
         self.peers = {}
         self.peers_lock = threading.Lock()
@@ -62,60 +65,65 @@ class MulticastDiscovery:
 
         self.sock.settimeout(0.5)
 
+    def _validate_group_addr(self, group_addr: str):
+        try:
+            packed = socket.inet_pton(socket.AF_INET, group_addr)
+            family = socket.AF_INET
+            is_ipv6 = False
+        except OSError:
+            try:
+                packed = socket.inet_pton(socket.AF_INET6, group_addr)
+                family = socket.AF_INET6
+                is_ipv6 = True
+            except OSError:
+                raise ValueError(f"Некорректный IP-адрес: {group_addr}")
+
+        if is_ipv6:
+            # IPv6 multicast — все адреса начинаются с 0xff
+            if packed[0] != 0xFF:
+                raise ValueError(
+                    f"Адрес {group_addr} не является multicast "
+                    f"(IPv6 multicast должен начинаться с ff00::/8)"
+                )
+        else:
+            # IPv4 multicast — старшие 4 бита должны быть 1110 (224.0.0.0/4)
+            first_octet = packed[0]
+            if not (0xE0 <= first_octet <= 0xEF):
+                raise ValueError(
+                    f"Адрес {group_addr} не является multicast "
+                    f"(допустимый диапазон: {self.IPV4_MULTICAST_MIN} - "
+                    f"{self.IPV4_MULTICAST_MAX})"
+                )
+
+        return family, is_ipv6
+
     def _join_group(self):
         if self.is_ipv6:
-            group_bin = socket.inet_pton(
-                socket.AF_INET6,
-                self.group_addr
-            )
+            group_bin = socket.inet_pton(socket.AF_INET6, self.group_addr)
+            self.if_index = 0
 
-            interface_index = socket.if_nametoindex("en0")
+            for index, name in socket.if_nameindex():
+                mreq = group_bin + struct.pack("@I", index)
+                try:
+                    self.sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+                    self.if_index = index
+                    break
+                except OSError:
+                    continue
 
-            mreq = group_bin + struct.pack(
-                "@I",
-                interface_index
-            )
-
-            self.sock.setsockopt(
-                socket.IPPROTO_IPV6,
-                socket.IPV6_JOIN_GROUP,
-                mreq
-            )
-
+            if self.if_index == 0:
+                raise OSError("Не найден интерфейс с поддержкой IPv6 multicast")
         else:
-            group_bin = socket.inet_aton(
-                self.group_addr
-            )
-
-            mreq = group_bin + struct.pack(
-                "=I",
-                socket.INADDR_ANY
-            )
-
-            self.sock.setsockopt(
-                socket.IPPROTO_IP,
-                socket.IP_ADD_MEMBERSHIP,
-                mreq
-            )
+            mreq = socket.inet_aton(self.group_addr) + struct.pack("=I", socket.INADDR_ANY)
+            self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
     def _make_message(self, msg_type: str) -> bytes:
         return f"{msg_type}|{self.instance_id}".encode("utf-8")
 
     def _dest(self):
         if self.is_ipv6:
-            interface_index = socket.if_nametoindex("en0")
-
-            return (
-                self.group_addr,
-                self.port,
-                0,
-                interface_index
-            )
-
-        return (
-            self.group_addr,
-            self.port
-        )
+            return (self.group_addr, self.port, 0, self.if_index)
+        return (self.group_addr, self.port)
 
     def _send(self, msg_type: str):
         try:
@@ -123,7 +131,13 @@ class MulticastDiscovery:
         except OSError as e:
             print(f"[!] Ошибка отправки {msg_type}: {e}", file=sys.stderr)
 
-    def _recv_loop(self):
+    def _sender_loop(self):
+        self._send("ANNOUNCE")
+        while self.running:
+            time.sleep(self.ANNOUNCE_INTERVAL)
+            self._send("ANNOUNCE")
+
+    def _receiver_loop(self):
         while self.running:
             try:
                 data, addr = self.sock.recvfrom(self.BUFFER_SIZE)
@@ -134,33 +148,35 @@ class MulticastDiscovery:
                     continue
                 break
 
-            try:
-                text = data.decode("utf-8")
-            except UnicodeDecodeError:
-                continue
+            self._handle_message(data, addr)
 
-            if "|" not in text:
-                continue
-            msg_type, instance_id = text.split("|", 1)
-            if instance_id == self.instance_id:
-                continue
+    def _handle_message(self, data: bytes, addr):
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            return
 
-            ip = addr[0]
-            now = time.time()
+        if "|" not in text:
+            return
+        msg_type, instance_id = text.split("|", 1)
+        if instance_id == self.instance_id:
+            return
 
-            if msg_type == "ANNOUNCE":
-                with self.peers_lock:
-                    self.peers[instance_id] = (ip, now)
-                pass
+        ip = addr[0]
+        now = time.monotonic()
 
-            elif msg_type == "BYE":
-                with self.peers_lock:
-                    self.peers.pop(instance_id, None)
+        if msg_type == "ANNOUNCE":
+            with self.peers_lock:
+                self.peers[instance_id] = (ip, now)
+
+        elif msg_type == "BYE":
+            with self.peers_lock:
+                self.peers.pop(instance_id, None)
 
     def _prune_loop(self):
         while self.running:
             time.sleep(1.0)
-            now = time.time()
+            now = time.monotonic()
             with self.peers_lock:
                 dead = [pid for pid, (_, ts) in self.peers.items()
                         if now - ts > self.PEER_TIMEOUT]
@@ -168,15 +184,19 @@ class MulticastDiscovery:
                     del self.peers[pid]
 
     def _report_loop(self):
-        prev_ids = frozenset()
+        prev_peers = frozenset()
+
         while self.running:
             time.sleep(0.5)
             with self.peers_lock:
-                current_items = [(pid, ip) for pid, (ip, _) in self.peers.items()]
-                current_ids = frozenset(pid for pid, _ in current_items)
+                current_items = [
+                    (pid, ip) for pid, (ip, _) in self.peers.items()
+                ]
 
-            if current_ids != prev_ids:
-                prev_ids = current_ids
+            current_peers = frozenset(current_items)
+
+            if current_peers != prev_peers:
+                prev_peers = current_peers
                 ips = sorted({ip for _, ip in current_items})
                 self._print_peers(ips, len(current_items))
 
@@ -190,7 +210,6 @@ class MulticastDiscovery:
             for ip in ips:
                 print(f"    - {ip}")
         sys.stdout.flush()
-        
 
     def run(self):
         print(f"=== Multicast Discovery ===")
@@ -200,7 +219,8 @@ class MulticastDiscovery:
         print("Для выхода нажмите Ctrl+C\n")
 
         threads = [
-            threading.Thread(target=self._recv_loop, daemon=True),
+            threading.Thread(target=self._receiver_loop, daemon=True),
+            threading.Thread(target=self._sender_loop, daemon=True),
             threading.Thread(target=self._prune_loop, daemon=True),
             threading.Thread(target=self._report_loop, daemon=True),
         ]
@@ -208,10 +228,8 @@ class MulticastDiscovery:
             t.start()
 
         try:
-            self._send("ANNOUNCE")
-            while self.running:
-                time.sleep(self.ANNOUNCE_INTERVAL)
-                self._send("ANNOUNCE")
+            while True:
+                time.sleep(0.5)
         except KeyboardInterrupt:
             print("\nЗавершение...")
         finally:
