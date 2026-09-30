@@ -37,14 +37,12 @@ multicast_discovery/
 
 ```bash
 # IPv4-пример
-python3 run.py 239.255.0.1
-
-# IPv4 с явным указанием порта
-python3 run.py 239.255.0.1 60000
+python3 run.py <IPv4 multicast> [port] [net_interface]
 
 # IPv6-пример
-python3 run.py ff02::1:1 60000
+python3 run.py <IPv6 multicast> [port] [net_interface]
 ```
+Где IPv4/6 в диапозоне мультикаст адресов, (optinal) port - порт от 1 до 65335 и (optional) net_interface - сетевой интерфейс на устройстве
 
 Запустите скрипт в нескольких терминалах (или на нескольких машинах в
 одной сети) с одинаковым multicast-адресом и портом — каждый экземпляр
