@@ -31,9 +31,18 @@ multicast_discovery/
 - Python 3.7+
 - ОС: macOS/Windows/Linux
 
+## Подготовка
+
+Установите зависимости в корне проекта
+```bash
+pip install -r requirements.txt
+```
+
 ## Запуск
 
 Из корня проекта (там, где лежит `run.py`):
+
+Установить зависимости
 
 ```bash
 # IPv4-пример
