@@ -43,32 +43,50 @@ class MulticastDiscovery:
 
         self.running = True
 
-        self.sock = socket.socket(self.family, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        self.sock = None
 
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        if hasattr(socket, "SO_REUSEPORT"):
-            try:
-                self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-            except OSError:
-                pass
+        try:
+            self.sock = socket.socket(
+                self.family,
+                socket.SOCK_DGRAM,
+                socket.IPPROTO_UDP
+            )
 
-        if self.is_ipv6:
-            self.sock.bind(("::", port))
-        else:
-            self.sock.bind(("", port))
+            self.sock.setsockopt(
+                socket.SOL_SOCKET,
+                socket.SO_REUSEADDR,
+                1
+            )
 
-        self._join_group()
+            if hasattr(socket, "SO_REUSEPORT"):
+                try:
+                    self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                except OSError:
+                    pass
 
-        if self.is_ipv6:
-            self.sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, 1)
-        else:
-            self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
-            try:
-                self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_ALL, 0)
-            except (AttributeError, OSError):
-                pass
+            if self.is_ipv6:
+                self.sock.bind(("::", port))
+            else:
+                self.sock.bind(("", port))
 
-        self.sock.settimeout(0.5)
+            self._join_group()
+
+            if self.is_ipv6:
+                self.sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, 1)
+            else:
+                self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
+                try:
+                    self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_ALL, 0)
+                except (AttributeError, OSError):
+                    pass
+
+            self.sock.settimeout(0.5)
+            
+        except Exception:
+            if self.sock is not None:
+                self.sock.close()
+                self.sock = None
+            raise    
 
     def _validate_group_addr(self, group_addr: str):
         try:
