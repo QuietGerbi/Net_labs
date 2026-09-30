@@ -4,6 +4,8 @@ import sys
 import time
 import threading
 import uuid
+import psutil
+from typing import Optional
 from datetime import datetime
 
 
@@ -15,23 +17,26 @@ class MulticastDiscovery:
     IPV4_MULTICAST_MIN = "224.0.0.0"
     IPV4_MULTICAST_MAX = "239.255.255.255"
 
-    def __init__(self, group_addr: str, port: int = 60000):
+    def __init__( self, group_addr: str, port: int = 60000, interface: Optional[str] = None ):
         if isinstance(port, bool) or not isinstance(port, int):
             raise TypeError(
                 f"Порт должен быть int, получено {type(port).__name__}"
             )
-        
+
         if not (1 <= port <= 65535):
             raise ValueError(
                 f"Некорректный порт: {port}. Допустимый диапазон: 1..65535"
             )
-        
+
         self.group_addr = group_addr
         self.port = port
 
         self.instance_id = str(uuid.uuid4())
 
         self.family, self.is_ipv6 = self._validate_group_addr(group_addr)
+
+        self.interface = interface
+        self.if_index = 0
 
         self.peers = {}
         self.peers_lock = threading.Lock()
@@ -95,25 +100,79 @@ class MulticastDiscovery:
 
         return family, is_ipv6
 
+    def _resolve_interface(self, interface: str) -> int:
+        for index, name in socket.if_nameindex():
+            if name == interface:
+                return index
+        raise OSError(f"Интерфейс не найден: {interface}")
+
+    def _get_ipv4_address(self, interface: str) -> str:
+        addresses = psutil.net_if_addrs().get(interface)
+
+        if not addresses:
+            raise OSError(f"Интерфейс не найден: {interface}")
+
+        for addr in addresses:
+            if addr.family == socket.AF_INET:
+                return addr.address
+
+        raise OSError(
+            f"У интерфейса {interface} нет IPv4-адреса"
+        )
+
     def _join_group(self):
         if self.is_ipv6:
             group_bin = socket.inet_pton(socket.AF_INET6, self.group_addr)
-            self.if_index = 0
 
-            for index, name in socket.if_nameindex():
-                mreq = group_bin + struct.pack("@I", index)
-                try:
-                    self.sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
-                    self.if_index = index
-                    break
-                except OSError:
-                    continue
+            if self.interface is not None:
+                self.if_index = self._resolve_interface(self.interface)
+                mreq = group_bin + struct.pack("@I", self.if_index)
+                self.sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+            else:
+                self.if_index = 0
+                for index, name in socket.if_nameindex():
+                    mreq = group_bin + struct.pack("@I", index)
+                    try:
+                        self.sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
+                        self.if_index = index
+                        break
+                    except OSError:
+                        continue
 
-            if self.if_index == 0:
-                raise OSError("Не найден интерфейс с поддержкой IPv6 multicast")
+                if self.if_index == 0:
+                    raise OSError("Не найден интерфейс с поддержкой IPv6 multicast")
         else:
-            mreq = socket.inet_aton(self.group_addr) + struct.pack("=I", socket.INADDR_ANY)
-            self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+            if self.interface is not None:
+                interface_ip = self._get_ipv4_address(self.interface)
+                interface_bin = socket.inet_aton(interface_ip)
+
+                mreq = (
+                    socket.inet_aton(self.group_addr)
+                    + interface_bin
+                )
+
+                self.sock.setsockopt(
+                    socket.IPPROTO_IP,
+                    socket.IP_ADD_MEMBERSHIP,
+                    mreq,
+                )
+
+                self.sock.setsockopt(
+                    socket.IPPROTO_IP,
+                    socket.IP_MULTICAST_IF,
+                    interface_bin,
+                )
+            else:
+                mreq = (
+                    socket.inet_aton(self.group_addr)
+                    + struct.pack("=I", socket.INADDR_ANY)
+                )
+
+                self.sock.setsockopt(
+                    socket.IPPROTO_IP,
+                    socket.IP_ADD_MEMBERSHIP,
+                    mreq,
+                )
 
     def _make_message(self, msg_type: str) -> bytes:
         return f"{msg_type}|{self.instance_id}".encode("utf-8")
