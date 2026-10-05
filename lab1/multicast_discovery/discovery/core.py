@@ -4,6 +4,7 @@ import sys
 import time
 import threading
 import uuid
+import ipaddress
 import psutil
 from typing import Optional
 from datetime import datetime
@@ -13,6 +14,7 @@ class MulticastDiscovery:
     ANNOUNCE_INTERVAL = 2.0
     PEER_TIMEOUT = 6.0
     BUFFER_SIZE = 1024
+    MAX_PEERS = 256
 
     IPV4_MULTICAST_MIN = "224.0.0.0"
     IPV4_MULTICAST_MAX = "239.255.255.255"
@@ -138,6 +140,45 @@ class MulticastDiscovery:
             f"У интерфейса {interface} нет IPv4-адреса"
         )
 
+    def _is_valid_instance_id(self, value: str) -> bool:
+        try:
+            parsed = uuid.UUID(value)
+        except ValueError:
+            return False
+        return parsed.version == 4 and str(parsed) == value
+
+    def _list_ipv6_multicast_interfaces(self):
+        stats = psutil.net_if_stats()
+        addrs = psutil.net_if_addrs()
+        result = []
+
+        for index, name in socket.if_nameindex():
+            st = stats.get(name)
+            if st is None or not st.isup:
+                continue
+
+            raw_flags = getattr(st, "flags", "") or ""
+            flags = {f.strip().lower() for f in raw_flags.split(",") if f.strip()}
+            if flags and ("loopback" in flags or "multicast" not in flags):
+                continue
+
+            ipv6 = []
+            for a in addrs.get(name, []):
+                if a.family == socket.AF_INET6:
+                    try:
+                        ipv6.append(ipaddress.IPv6Address(a.address.split("%")[0]))
+                    except ValueError:
+                        continue
+
+            if not ipv6 or all(ip.is_loopback for ip in ipv6):
+                continue
+
+            has_global = any(not ip.is_link_local for ip in ipv6)
+            result.append((0 if has_global else 1, index, name))
+
+        result.sort()
+        return [(index, name) for _, index, name in result]
+
     def _join_group(self):
         if self.is_ipv6:
             group_bin = socket.inet_pton(socket.AF_INET6, self.group_addr)
@@ -148,7 +189,7 @@ class MulticastDiscovery:
                 self.sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
             else:
                 self.if_index = 0
-                for index, name in socket.if_nameindex():
+                for index, name in self._list_ipv6_multicast_interfaces():
                     mreq = group_bin + struct.pack("@I", index)
                     try:
                         self.sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mreq)
@@ -158,7 +199,7 @@ class MulticastDiscovery:
                         continue
 
                 if self.if_index == 0:
-                    raise OSError("Не найден интерфейс с поддержкой IPv6 multicast")
+                    raise OSError("Не найден подходящий интерфейс с поддержкой IPv6 multicast")
         else:
             if self.interface is not None:
                 interface_ip = self._get_ipv4_address(self.interface)
@@ -234,6 +275,9 @@ class MulticastDiscovery:
         if "|" not in text:
             return
         msg_type, instance_id = text.split("|", 1)
+
+        if not self._is_valid_instance_id(instance_id):
+            return
         if instance_id == self.instance_id:
             return
 
@@ -242,11 +286,15 @@ class MulticastDiscovery:
 
         if msg_type == "ANNOUNCE":
             with self.peers_lock:
+                if instance_id not in self.peers and len(self.peers) >= self.MAX_PEERS:
+                    return
                 self.peers[instance_id] = (ip, now)
 
         elif msg_type == "BYE":
             with self.peers_lock:
-                self.peers.pop(instance_id, None)
+                peer = self.peers.get(instance_id)
+                if peer is not None and peer[0] == ip:
+                    del self.peers[instance_id]
 
     def _prune_loop(self):
         while self.running:

@@ -15,16 +15,13 @@ multicast_discovery/
     └── cli.py              # разбор аргументов командной строки и main()
 ```
 
-Логика кода не менялась — она была только разнесена по файлам:
 - `discovery/core.py` — сетевой сокет, join к multicast-группе,
   отправка/приём ANNOUNCE/BYE, отслеживание живых пиров.
 - `discovery/cli.py` — `parse_args()` и `main()`, обработка сигналов
   SIGINT/SIGTERM.
 - `run.py` — тонкая точка входа, которая просто вызывает `main()`.
 
-Используются только модули стандартной библиотеки Python
-(`socket`, `struct`, `threading`, `uuid`, `signal`, `datetime`),
-внешние зависимости не требуются.
+Используются модули как стандартной библиотеки Python так и библиотека psuitil
 
 ## Требования
 
@@ -42,8 +39,6 @@ pip install -r requirements.txt
 
 Из корня проекта (там, где лежит `run.py`):
 
-Установить зависимости
-
 ```bash
 # IPv4-пример
 python3 run.py <IPv4 multicast> [port] [net_interface]
@@ -51,7 +46,7 @@ python3 run.py <IPv4 multicast> [port] [net_interface]
 # IPv6-пример
 python3 run.py <IPv6 multicast> [port] [net_interface]
 ```
-Где IPv4/6 в диапозоне мультикаст адресов, (optinal) port - порт от 1 до 65335 и (optional) net_interface - сетевой интерфейс на устройстве
+Где IPv4/6 в диапозоне мультикаст адресов, (optinal) port - порт от 1 до 65535 и (optional) net_interface - сетевой интерфейс на устройстве
 
 Запустите скрипт в нескольких терминалах (или на нескольких машинах в
 одной сети) с одинаковым multicast-адресом и портом — каждый экземпляр
