@@ -2,7 +2,7 @@ import struct
 
 MAGIC = b"FTP1"
 MAX_NAME_BYTES = 4096
-MAX_FILE_SIZE = 1 << 40          # 1 ТиБ
+MAX_FILE_SIZE = 1 << 40          
 MAX_MESSAGE_BYTES = 1024
 
 STATUS_OK = 0
