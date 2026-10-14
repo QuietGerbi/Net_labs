@@ -1,10 +1,13 @@
 import os
+import socket
+import time
 
 import storage
 from protocol import ProtocolError, read_request_header, send_response
 
-BUFFER_SIZE = 1 << 20        
-IDLE_TIMEOUT = 30.0          
+BUFFER_SIZE = 1 << 20       
+IDLE_TIMEOUT = 30.0       
+REJECT_DRAIN_SECONDS = 2.0   
 
 
 def handle_client(conn, addr, uploads_dir, monitor):
@@ -41,7 +44,7 @@ def handle_client(conn, addr, uploads_dir, monitor):
             raise ProtocolError(f"размер не совпал: ожидалось {size}, сохранено {actual}")
         ok, message = True, f"файл сохранён как {os.path.basename(path)}"
         print(f"[{label}] успешно: {path}", flush=True)
-    except Exception as e:            
+    except Exception as e:                
         message = f"ошибка: {e}"
         print(f"[{label}] {message}", flush=True)
     finally:
@@ -52,7 +55,7 @@ def handle_client(conn, addr, uploads_dir, monitor):
                 pass
         if not ok and path is not None:
             try:
-                os.remove(path)              
+                os.remove(path)  
             except OSError:
                 pass
         try:
@@ -63,3 +66,23 @@ def handle_client(conn, addr, uploads_dir, monitor):
             conn.close()
         except OSError:
             pass
+
+
+def reject_client(conn, addr, message):
+    label = f"{addr[0]}:{addr[1]}"
+    try:
+        conn.settimeout(REJECT_DRAIN_SECONDS)
+        send_response(conn, False, message)
+        conn.shutdown(socket.SHUT_WR)
+        deadline = time.monotonic() + REJECT_DRAIN_SECONDS
+        while time.monotonic() < deadline:
+            if not conn.recv(65536):
+                break
+    except OSError:
+        pass
+    finally:
+        try:
+            conn.close()
+        except OSError:
+            pass
+    print(f"[{label}] отклонён: {message}", flush=True)

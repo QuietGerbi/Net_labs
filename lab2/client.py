@@ -24,17 +24,24 @@ def send_file(path, host, port):
 
         with socket.create_connection((host, port), timeout=CONNECT_TIMEOUT) as sock:
             sock.settimeout(IO_TIMEOUT)
-            send_request_header(sock, name, size)
+            try:
+                send_request_header(sock, name, size)
 
-            buf = bytearray(CHUNK_SIZE)
-            view = memoryview(buf)
-            sent = 0
-            while sent < size:
-                n = f.readinto(view[:min(CHUNK_SIZE, size - sent)])
-                if not n:
-                    raise ProtocolError("файл стал короче во время отправки")
-                sock.sendall(view[:n])
-                sent += n
+                buf = bytearray(CHUNK_SIZE)
+                view = memoryview(buf)
+                sent = 0
+                while sent < size:
+                    n = f.readinto(view[:min(CHUNK_SIZE, size - sent)])
+                    if not n:
+                        raise ProtocolError("файл стал короче во время отправки")
+                    sock.sendall(view[:n])
+                    sent += n
+            except (BrokenPipeError, ConnectionResetError):
+                try:
+                    sock.settimeout(3.0)
+                    return read_response(sock)
+                except (OSError, ProtocolError):
+                    raise
             return read_response(sock)
 
 
