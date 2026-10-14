@@ -2,6 +2,7 @@ import socket
 import struct
 import sys
 import time
+import random
 import threading
 import uuid
 import ipaddress
@@ -15,6 +16,11 @@ class MulticastDiscovery:
     PEER_TIMEOUT = 6.0
     BUFFER_SIZE = 1024
     MAX_PEERS = 256
+
+    DISCOVER_RETRIES = 3        
+    DISCOVER_RETRY_INTERVAL = 1.0  
+    RESPONSE_MIN_INTERVAL = 0.5
+    RESPONSE_JITTER_MAX = 0.3    
 
     IPV4_MULTICAST_MIN = "224.0.0.0"
     IPV4_MULTICAST_MAX = "239.255.255.255"
@@ -42,6 +48,12 @@ class MulticastDiscovery:
 
         self.peers = {}
         self.peers_lock = threading.Lock()
+
+
+        self._respond_lock = threading.Lock()
+        self._last_announce = float("-inf") 
+        self._response_pending = False      
+        self._response_timer: Optional[threading.Timer] = None
 
         self.running = True
 
@@ -83,12 +95,12 @@ class MulticastDiscovery:
                     pass
 
             self.sock.settimeout(0.5)
-            
+
         except Exception:
             if self.sock is not None:
                 self.sock.close()
                 self.sock = None
-            raise    
+            raise
 
     def _validate_group_addr(self, group_addr: str):
         try:
@@ -246,12 +258,53 @@ class MulticastDiscovery:
             self.sock.sendto(self._make_message(msg_type), self._dest())
         except OSError as e:
             print(f"[!] Ошибка отправки {msg_type}: {e}", file=sys.stderr)
+            return
+
+        if msg_type == "ANNOUNCE":
+            with self._respond_lock:
+                self._last_announce = time.monotonic()
 
     def _sender_loop(self):
         self._send("ANNOUNCE")
         while self.running:
             time.sleep(self.ANNOUNCE_INTERVAL)
             self._send("ANNOUNCE")
+
+    def _discover_loop(self):
+        for attempt in range(self.DISCOVER_RETRIES):
+            if not self.running:
+                return
+            self._send("DISCOVER")
+
+            if attempt == self.DISCOVER_RETRIES - 1:
+                return
+
+            with self.peers_lock:
+                if self.peers:
+                    return
+
+    def _schedule_response(self):
+        with self._respond_lock:
+            if not self.running or self._response_pending:
+                return
+
+            now = time.monotonic()
+            wait_for_interval = max(0.0, self._last_announce + self.RESPONSE_MIN_INTERVAL - now)
+            delay = wait_for_interval + random.uniform(0.0, self.RESPONSE_JITTER_MAX)
+
+            self._response_pending = True
+            timer = threading.Timer(delay, self._send_response)
+            timer.daemon = True
+            self._response_timer = timer
+            timer.start()
+
+    def _send_response(self):
+        with self._respond_lock:
+            self._response_pending = False
+            self._response_timer = None
+            if not self.running:
+                return
+        self._send("ANNOUNCE")
 
     def _receiver_loop(self):
         while self.running:
@@ -289,6 +342,9 @@ class MulticastDiscovery:
                 if instance_id not in self.peers and len(self.peers) >= self.MAX_PEERS:
                     return
                 self.peers[instance_id] = (ip, now)
+
+        elif msg_type == "DISCOVER":
+            self._schedule_response()
 
         elif msg_type == "BYE":
             with self.peers_lock:
@@ -341,8 +397,11 @@ class MulticastDiscovery:
         print(f"ID инстанса: {self.instance_id}")
         print("Для выхода нажмите Ctrl+C\n")
 
+        receiver = threading.Thread(target=self._receiver_loop, daemon=True)
+        receiver.start()
+
         threads = [
-            threading.Thread(target=self._receiver_loop, daemon=True),
+            threading.Thread(target=self._discover_loop, daemon=True), 
             threading.Thread(target=self._sender_loop, daemon=True),
             threading.Thread(target=self._prune_loop, daemon=True),
             threading.Thread(target=self._report_loop, daemon=True),
@@ -362,6 +421,13 @@ class MulticastDiscovery:
         if not self.running:
             return
         self.running = False
+
+        with self._respond_lock:
+            if self._response_timer is not None:
+                self._response_timer.cancel()
+                self._response_timer = None
+            self._response_pending = False
+
         self._send("BYE")
         try:
             self.sock.close()
