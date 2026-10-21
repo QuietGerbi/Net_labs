@@ -4,7 +4,7 @@ import socket
 import threading
 import time
 
-from client_handler import handle_client, reject_client
+from client_handler import handle_client
 from speed_monitor import SpeedMonitor
 
 MAX_CLIENTS = 40 
@@ -21,7 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description="Сервер приёма файлов")
     parser.add_argument("port", type=int, help="порт для входящих соединений")
     args = parser.parse_args()
-    if not 0 <= args.port <= 65535:
+    if not 0 < args.port <= 65535:
         parser.error("порт должен быть в диапазоне 0..65535")
 
     uploads_dir = os.path.join(os.getcwd(), "uploads")
