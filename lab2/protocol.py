@@ -54,14 +54,27 @@ def read_request_header(sock):
         raise ProtocolError("заявленный размер файла превышает 1 ТиБ")
     return name, size
 
+def truncate_utf8(text, max_bytes):
+    raw = text.encode("utf-8", errors="replace")
+    if len(raw) <= max_bytes:
+        return raw
+    return raw[:max_bytes].decode("utf-8", errors="ignore").encode("utf-8")
 
 def send_response(sock, ok, message=""):
-    raw = message.encode("utf-8")[:MAX_MESSAGE_BYTES]
+    raw = truncate_utf8(message, MAX_MESSAGE_BYTES)
     status = STATUS_OK if ok else STATUS_ERROR
     sock.sendall(_RESPONSE.pack(status, len(raw)) + raw)
 
 
 def read_response(sock):
     status, length = _RESPONSE.unpack(recv_exact(sock, _RESPONSE.size))
-    message = recv_exact(sock, length).decode("utf-8", errors="replace")
+    if status not in (STATUS_OK, STATUS_ERROR):
+        raise ProtocolError(f"неизвестный код статуса ответа: {status}")
+    if length > MAX_MESSAGE_BYTES:
+        raise ProtocolError(
+            f"длина сообщения в ответе превышает {MAX_MESSAGE_BYTES} байт")
+    try:
+        message = recv_exact(sock, length).decode("utf-8")
+    except UnicodeDecodeError:
+        raise ProtocolError("сообщение в ответе не является корректным UTF-8")
     return status == STATUS_OK, message

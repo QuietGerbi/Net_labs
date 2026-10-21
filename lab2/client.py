@@ -52,6 +52,9 @@ def main():
     parser.add_argument("port", type=int, help="порт сервера")
     args = parser.parse_args()
 
+    if not 0 < args.port <= 65535:
+        parser.error("порт должен быть в диапазоне 1..65535")
+
     try:
         ok, message = send_file(args.file, args.host, args.port)
     except (OSError, ProtocolError) as e:

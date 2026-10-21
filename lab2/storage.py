@@ -28,6 +28,7 @@ def _is_inside(directory, path):
 
 
 def create_upload_file(uploads_dir, requested_name):
+    check_uploads_dir(uploads_dir)
     safe = sanitize_filename(requested_name)
     stem, ext = os.path.splitext(safe)
     flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
@@ -45,3 +46,13 @@ def create_upload_file(uploads_dir, requested_name):
             continue
         return os.fdopen(fd, "wb"), path
     raise OSError("не удалось подобрать свободное имя файла")
+
+def check_uploads_dir(uploads_dir):
+    abs_dir = os.path.abspath(uploads_dir)
+    parent, base = os.path.split(abs_dir)
+    expected = os.path.join(os.path.realpath(parent), base)
+    if (os.path.islink(abs_dir)
+            or os.path.normcase(os.path.realpath(abs_dir)) != os.path.normcase(expected)):
+        raise OSError("uploads является символической ссылкой, это запрещено")
+    if not os.path.isdir(abs_dir):
+        raise OSError("uploads не является каталогом")
