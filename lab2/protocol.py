@@ -1,16 +1,13 @@
 import struct
 
-MAGIC = b"FTP1"
 MAX_NAME_BYTES = 4096
-MAX_FILE_SIZE = 1 << 40          
-MAX_MESSAGE_BYTES = 1024
+MAX_FILE_SIZE = 1 << 40
 
-STATUS_OK = 0
-STATUS_ERROR = 1
+STATUS_ERROR = 0
+STATUS_OK = 1
 
-_PREFIX = struct.Struct(">4sH")
+_NAME_LEN = struct.Struct(">H")
 _SIZE = struct.Struct(">Q")
-_RESPONSE = struct.Struct(">BH")
 
 
 class ProtocolError(Exception):
@@ -36,15 +33,13 @@ def send_request_header(sock, name, size):
         raise ProtocolError(f"длина имени файла должна быть 1..{MAX_NAME_BYTES} байт")
     if not 0 <= size <= MAX_FILE_SIZE:
         raise ProtocolError("размер файла превышает 1 ТиБ")
-    sock.sendall(_PREFIX.pack(MAGIC, len(raw_name)) + raw_name + _SIZE.pack(size))
+    sock.sendall(_NAME_LEN.pack(len(raw_name)) + raw_name + _SIZE.pack(size))
 
 
 def read_request_header(sock):
-    magic, name_len = _PREFIX.unpack(recv_exact(sock, _PREFIX.size))
-    if magic != MAGIC:
-        raise ProtocolError("неверная сигнатура протокола")
+    (name_len,) = _NAME_LEN.unpack(recv_exact(sock, _NAME_LEN.size))
     if not 0 < name_len <= MAX_NAME_BYTES:
-        raise ProtocolError("недопустимая длина имени файла")
+        raise ProtocolError(f"недопустимая длина имени файла: {name_len}")
     try:
         name = recv_exact(sock, name_len).decode("utf-8")
     except UnicodeDecodeError:
@@ -54,27 +49,15 @@ def read_request_header(sock):
         raise ProtocolError("заявленный размер файла превышает 1 ТиБ")
     return name, size
 
-def truncate_utf8(text, max_bytes):
-    raw = text.encode("utf-8", errors="replace")
-    if len(raw) <= max_bytes:
-        return raw
-    return raw[:max_bytes].decode("utf-8", errors="ignore").encode("utf-8")
 
 def send_response(sock, ok, message=""):
-    raw = truncate_utf8(message, MAX_MESSAGE_BYTES)
-    status = STATUS_OK if ok else STATUS_ERROR
-    sock.sendall(_RESPONSE.pack(status, len(raw)) + raw)
+    sock.sendall(bytes([STATUS_OK if ok else STATUS_ERROR]))
 
 
 def read_response(sock):
-    status, length = _RESPONSE.unpack(recv_exact(sock, _RESPONSE.size))
-    if status not in (STATUS_OK, STATUS_ERROR):
-        raise ProtocolError(f"неизвестный код статуса ответа: {status}")
-    if length > MAX_MESSAGE_BYTES:
-        raise ProtocolError(
-            f"длина сообщения в ответе превышает {MAX_MESSAGE_BYTES} байт")
-    try:
-        message = recv_exact(sock, length).decode("utf-8")
-    except UnicodeDecodeError:
-        raise ProtocolError("сообщение в ответе не является корректным UTF-8")
-    return status == STATUS_OK, message
+    (status,) = recv_exact(sock, 1)
+    if status == STATUS_OK:
+        return True, "сервер подтвердил сохранение файла"
+    if status == STATUS_ERROR:
+        return False, "сервер сообщил об ошибке (подробности в логе сервера)"
+    raise ProtocolError(f"неизвестный код статуса ответа: {status}")
