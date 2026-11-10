@@ -17,10 +17,10 @@ class Config:
     max_places: int = 20            
     max_locations: int = 5          
     timeout_s: int = 15
+    search_pool: int = max_places * 3
 
 
 def _load_dotenv(path: Path) -> None:
-    """Минимальный загрузчик .env (без внешних зависимостей)."""
     if not path.is_file():
         return
     for line in path.read_text(encoding="utf-8").splitlines():

@@ -54,11 +54,12 @@ async def get_weather(session: aiohttp.ClientSession, cfg: Config, loc: Location
         wind_ms=wind.get("speed", 0.0),
     )
 
-async def geosearch(session: aiohttp.ClientSession, cfg: Config, loc: Location) -> list[dict]:
+async def geosearch(session: aiohttp.ClientSession, cfg: Config, loc: Location,
+                    limit: int) -> list[dict]:
     data = await _get_json(session, WIKI_API_URL, {
         "action": "query", "list": "geosearch",
         "gscoord": f"{loc.lat}|{loc.lon}",
-        "gsradius": cfg.search_radius_m, "gslimit": cfg.max_places,
+        "gsradius": cfg.search_radius_m, "gslimit": limit,
         "gsprop": "type",
         "format": "json",
     })

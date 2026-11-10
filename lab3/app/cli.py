@@ -1,31 +1,17 @@
 import asyncio
+from typing import Optional
 
 import aiohttp
 
 from . import service
 from .config import USER_AGENT, Config, load_config
-from .models import Location, LocationInfo
-from typing import Optional
+from .models import Location, LocationInfo, kind_ru
 
-_KIND_RU = {
-    "country": "страна",
-    "adm1st": "регион",
-    "adm2nd": "округ",
-    "adm3rd": "район",
-    "city": "населённый пункт",
-    "isle": "остров",
-    "mountain": "гора",
-    "airport": "аэропорт",
-    "landmark": "достопримечательность",
-    "railwaystation": "ж/д станция",
-    "river": "река",
-    "forest": "лес",
-    "edu": "учебное заведение",
-    "event": "событие",
-    "waterbody": "водоём",
-    "glacier": "ледник",
-    "camera": "точка съёмки",
-}
+
+def _parse_query(raw: str) -> tuple[str, tuple[str, ...]]:
+    name, *tags = [p.strip() for p in raw.split(",")]
+    return name, tuple(t for t in tags if t)
+
 
 def _session(cfg: Config) -> aiohttp.ClientSession:
     return aiohttp.ClientSession(
@@ -39,10 +25,9 @@ async def _search(cfg: Config, query: str) -> list[Location]:
         return await service.find_locations(session, cfg, query)
 
 
-async def _load(cfg: Config, loc: Location) -> LocationInfo:
+async def _load(cfg: Config, loc: Location, tags: tuple[str, ...]) -> LocationInfo:
     async with _session(cfg) as session:
-        return await service.load_location_info(session, cfg, loc)
-
+        return await service.load_location_info(session, cfg, loc, tags)
 
 
 def _choose(locations: list[Location]) -> Optional[Location]:
@@ -57,10 +42,8 @@ def _choose(locations: list[Location]) -> Optional[Location]:
             return locations[int(raw) - 1]
         print("Некорректный номер.")
 
-def _kind_ru(kind: str) -> str:
-    return _KIND_RU.get(kind, kind)
 
-def _show(info: LocationInfo) -> None:
+def _show(info: LocationInfo, tags: tuple[str, ...] = ()) -> None:
     loc = info.location
     print("\n" + "=" * 60)
     print(f"{loc.name} ({loc.description})")
@@ -72,19 +55,21 @@ def _show(info: LocationInfo) -> None:
     if info.places:
         print(f"\nИнтересные места рядом ({len(info.places)}):")
         for i, p in enumerate(info.places, 1):
-            label = p.short or _kind_ru(p.kind)
+            label = p.tag or p.short or kind_ru(p.kind)
             tag = f" ({label})" if label else ""
             print(f"\n{i}. {p.title} — {p.distance_m:.0f} м{tag}")
             print(f"   {p.description}")
     elif not any("Места" in e for e in info.errors):
-        print("\nИнтересных мест поблизости не найдено.")
+        what = f"с тегом «{', '.join(tags)}» " if tags else ""
+        print(f"\nИнтересных мест {what}поблизости не найдено.")
     for e in info.errors:
         print(f"\n[!] {e}")
 
 
 def main() -> None:
     cfg = load_config()
-    query = input("Введите название места: ").strip()
+    raw = input("Введите название места (можно через запятую теги: Цветной проезд, музей): ").strip()
+    query, tags = _parse_query(raw)
     if not query:
         print("Пустой запрос.")
         return
@@ -97,8 +82,8 @@ def main() -> None:
         if chosen is None:
             return
         print("Загрузка данных...")
-        info = asyncio.run(_load(cfg, chosen)) 
+        info = asyncio.run(_load(cfg, chosen, tags)) 
     except aiohttp.ClientError as e:
         print(f"Ошибка сети/API: {e}")
         return
-    _show(info)
+    _show(info, tags)

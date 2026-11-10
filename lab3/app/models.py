@@ -1,14 +1,12 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-
 @dataclass(frozen=True)
 class Location:
     name: str
     lat: float
     lon: float
     description: str  
-
 
 @dataclass(frozen=True)
 class Weather:
@@ -19,7 +17,6 @@ class Weather:
     pressure_hpa: int
     wind_ms: float
 
-
 @dataclass(frozen=True)
 class Place:
     page_id: int
@@ -28,12 +25,34 @@ class Place:
     description: str
     kind: str = ""
     short: str = "" 
-
+    tag: str = ""
 
 @dataclass
 class LocationInfo:
-    """Общий объект результата: погода + интересные места (+ ошибки частей)."""
     location: Location
     weather: Optional[Weather] = None
     places: list[Place] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+
+KIND_RU = {
+    "country": "страна",
+    "adm1st": "регион",
+    "adm2nd": "округ",
+    "adm3rd": "район",
+    "city": "населённый пункт",
+    "isle": "остров",
+    "mountain": "гора",
+    "airport": "аэропорт",
+    "landmark": "достопримечательность",
+    "railwaystation": "ж/д станция",
+    "river": "река",
+    "forest": "лес",
+    "edu": "учебное заведение",
+    "event": "событие",
+    "waterbody": "водоём",
+    "glacier": "ледник",
+    "camera": "точка съёмки",
+}
+
+def kind_ru(kind: str) -> str:
+    return KIND_RU.get(kind, kind)
