@@ -11,11 +11,11 @@ class Location:
 @dataclass(frozen=True)
 class Weather:
     description: str
-    temp_c: float
-    feels_like_c: float
-    humidity: int
-    pressure_hpa: int
-    wind_ms: float
+    temp_c: Optional[float]
+    feels_like_c: Optional[float]
+    humidity: Optional[int]
+    pressure_hpa: Optional[int]
+    wind_ms: Optional[float]
 
 @dataclass(frozen=True)
 class Place:

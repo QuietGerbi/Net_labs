@@ -47,11 +47,11 @@ async def get_weather(session: aiohttp.ClientSession, cfg: Config, loc: Location
     weather_list = d.get("weather") or [{}]
     return Weather(
         description=weather_list[0].get("description", "—"),
-        temp_c=main.get("temp", float("nan")),
-        feels_like_c=main.get("feels_like", float("nan")),
-        humidity=main.get("humidity", 0),
-        pressure_hpa=main.get("pressure", 0),
-        wind_ms=wind.get("speed", 0.0),
+        temp_c=main.get("temp"),
+        feels_like_c=main.get("feels_like"),
+        humidity=main.get("humidity"),
+        pressure_hpa=main.get("pressure"),
+        wind_ms=wind.get("speed"),
     )
 
 async def geosearch(session: aiohttp.ClientSession, cfg: Config, loc: Location,

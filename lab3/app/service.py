@@ -64,17 +64,24 @@ def _classify(haystack: str) -> str:
     return "прочее"
 
 async def _places_chain(session: aiohttp.ClientSession, cfg: Config, loc: Location,
-                        tags: tuple[str, ...]) -> list[Place]:
+                        tags: tuple[str, ...]) -> tuple[list[Place], list[str]]:
     limit = cfg.search_pool if tags else cfg.max_places
     found = await clients.geosearch(session, cfg, loc, limit)
     if not found:
-        return []
+        return [], []
     ids = [item["pageid"] for item in found]
-    chunks = [ids[i:i + 20] for i in range(0, len(ids), 20)]   # лимит описаний: 20 за запрос
-    parts = await asyncio.gather(*(clients.get_extracts(session, c) for c in chunks))
+    chunks = [ids[i:i + 20] for i in range(0, len(ids), 20)] 
     details: dict[int, tuple[str, str]] = {}
-    for part in parts:
-        details.update(part)
+    errors: list[str] = []
+    parts = await asyncio.gather(
+        *(clients.get_extracts(session, c) for c in chunks),
+        return_exceptions=True,
+    )
+    for i, part in enumerate(parts, 1):
+        if isinstance(part, Exception):
+            errors.append(f"Пакет описаний {i} недоступен: {part}")
+        else:
+            details.update(part)
 
     places: list[Place] = []
     for item in found:
@@ -93,7 +100,7 @@ async def _places_chain(session: aiohttp.ClientSession, cfg: Config, loc: Locati
         ))
         if len(places) >= cfg.max_places:
             break
-    return places
+    return places, errors
 
 async def load_location_info(session: aiohttp.ClientSession, cfg: Config, loc: Location,
                              tags: tuple[str, ...] = ()) -> LocationInfo:
@@ -110,5 +117,6 @@ async def load_location_info(session: aiohttp.ClientSession, cfg: Config, loc: L
     if isinstance(places_res, BaseException):
         info.errors.append(f"Места недоступны: {places_res}")
     else:
-        info.places = places_res
+        info.places, place_errors = places_res
+        info.errors.extend(place_errors)
     return info

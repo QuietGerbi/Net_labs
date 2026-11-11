@@ -50,8 +50,13 @@ def _show(info: LocationInfo, tags: tuple[str, ...] = ()) -> None:
     print("=" * 60)
     w = info.weather
     if w:
-        print(f"\nПогода: {w.description}, {w.temp_c:.1f} °C (ощущается как {w.feels_like_c:.1f} °C)")
-        print(f"Влажность: {w.humidity}%, давление: {w.pressure_hpa} гПа, ветер: {w.wind_ms} м/с")
+        temp = f"{w.temp_c:.1f} °C" if w.temp_c is not None else "нет данных"
+        feels_like = f"{w.feels_like_c:.1f} °C" if w.feels_like_c is not None else "нет данных"
+        humidity = f"{w.humidity}%" if w.humidity is not None else "нет данных"
+        pressure = f"{w.pressure_hpa} гПа" if w.pressure_hpa is not None else "нет данных"
+        wind = f"{w.wind_ms} м/с" if w.wind_ms is not None else "нет данных"
+        print(f"\nПогода: {w.description}, {temp} (ощущается как {feels_like})")
+        print(f"Влажность: {humidity}, давление: {pressure}, ветер: {wind}")
     if info.places:
         print(f"\nИнтересные места рядом ({len(info.places)}):")
         for i, p in enumerate(info.places, 1):
