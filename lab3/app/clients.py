@@ -35,6 +35,8 @@ async def geocode(session: aiohttp.ClientSession, cfg: Config, query: str) -> li
             name=hit.get("name", "—"),
             lat=point["lat"], lon=point["lng"],
             description=", ".join(p for p in parts if p),
+            osm_key=hit.get("osm_key") or "",
+            osm_value=hit.get("osm_value") or "",
         ))
     return result
 

@@ -15,9 +15,8 @@ class Config:
     openweather_key: str
     search_radius_m: int = 1000     
     max_places: int = 20            
-    max_locations: int = 5          
+    max_locations: int = 10          
     timeout_s: int = 15
-    search_pool: int = max_places * 3
 
 
 def _load_dotenv(path: Path) -> None:

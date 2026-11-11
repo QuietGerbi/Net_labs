@@ -6,7 +6,9 @@ class Location:
     name: str
     lat: float
     lon: float
-    description: str  
+    description: str
+    osm_key: str = ""
+    osm_value: str = ""
 
 @dataclass(frozen=True)
 class Weather:
@@ -19,7 +21,7 @@ class Weather:
 
 @dataclass(frozen=True)
 class Place:
-    page_id: int
+    page_id: Optional[int]
     title: str
     distance_m: float
     description: str
