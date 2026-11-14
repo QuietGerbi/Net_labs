@@ -6,10 +6,10 @@
 ## Структура проекта
 
 ```
-multicast_discovery/
+lab1/
 ├── README.md              # эта инструкция
 ├── run.py                 # точка входа (запускаемый скрипт)
-└── discovery/
+└── app/
     ├── __init__.py        # экспортирует MulticastDiscovery
     ├── core.py             # класс MulticastDiscovery (вся логика обнаружения)
     └── cli.py              # разбор аргументов командной строки и main()
