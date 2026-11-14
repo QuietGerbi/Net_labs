@@ -8,7 +8,8 @@
 ```
 lab1/
 ├── README.md              # эта инструкция
-├── run.py                 # точка входа (запускаемый скрипт)
+├── run.py
+├── requirements.txt                # точка входа (запускаемый скрипт)
 └── app/
     ├── __init__.py        # экспортирует MulticastDiscovery
     ├── core.py             # класс MulticastDiscovery (вся логика обнаружения)
