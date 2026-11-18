@@ -1,5 +1,3 @@
-"""Таймеры сессий на куче. Отмена ленивая: через счётчик поколений timer_gen."""
-
 import heapq
 import itertools
 import time

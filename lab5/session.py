@@ -1,5 +1,3 @@
-"""Состояние одного клиентского соединения."""
-
 GREETING, REQUEST, RESOLVING, CONNECTING, RELAY, CLOSING = range(6)
 
 
@@ -9,22 +7,22 @@ class Session:
                  "port", "addrs", "qname", "qwire", "dns_id", "attempts", "last_rep")
 
     def __init__(self, csock):
-        self.csock = csock          # сокет клиента
-        self.rsock = None           # сокет целевого сервера
+        self.csock = csock
+        self.rsock = None
         self.state = GREETING
-        self.hs = bytearray()       # входные данные рукопожатия
-        self.c2r = bytearray()      # клиент -> сервер (ожидает отправки на сервер)
-        self.r2c = bytearray()      # сервер -> клиент (в т.ч. SOCKS-ответы)
-        self.c_eof = self.r_eof = False      # прочитан FIN от стороны
-        self.c_shut = self.r_shut = False    # мы сделали shutdown(WR) в её сторону
+        self.hs = bytearray()
+        self.c2r = bytearray()
+        self.r2c = bytearray()
+        self.c_eof = self.r_eof = False
+        self.c_shut = self.r_shut = False
         self.closed = False
-        self.cmask = 0              # события, на которые подписан csock
-        self.rmask = 0              # события, на которые подписан rsock
+        self.cmask = 0
+        self.rmask = 0
         self.timer_gen = 0
         self.port = 0
-        self.addrs = []             # оставшиеся адреса для попыток connect
-        self.qname = None           # имя для DNS (нижний регистр)
-        self.qwire = None           # имя в формате DNS-пакета
+        self.addrs = []
+        self.qname = None
+        self.qwire = None
         self.dns_id = None
         self.attempts = 0
         self.last_rep = 0x01

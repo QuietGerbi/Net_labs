@@ -1,5 +1,3 @@
-"""Разбор и формирование сообщений SOCKS5 (RFC 1928). Без работы с сокетами."""
-
 import socket
 import struct
 
@@ -21,7 +19,6 @@ REP_ATYP = 0x08
 
 
 class ProtocolError(Exception):
-    """rep=None — просто закрыть соединение, иначе отправить ответ с этим кодом."""
 
     def __init__(self, rep=None):
         super().__init__(rep)
@@ -29,7 +26,6 @@ class ProtocolError(Exception):
 
 
 def parse_greeting(buf):
-    """None — данных мало; иначе (сколько байт съедено, предложен ли метод 0x00)."""
     if len(buf) < 2:
         return None
     if buf[0] != VER:
@@ -41,8 +37,6 @@ def parse_greeting(buf):
 
 
 def parse_request(buf):
-    """None — данных мало; иначе (съедено, atyp, host, port).
-    host — str для IPv4 и bytes для доменного имени."""
     if len(buf) < 4:
         return None
     if buf[0] != VER:

@@ -1,5 +1,3 @@
-"""Ядро прокси: цикл селектора, рукопожатие, DNS, подключение, передача данных."""
-
 import errno
 import ipaddress
 import random
@@ -20,13 +18,12 @@ EV_W = selectors.EVENT_WRITE
 _LISTEN = object()
 _DNS = object()
 
-
 class Proxy:
     def __init__(self, port, resolver):
         self.resolver = resolver
         self.sel = selectors.DefaultSelector()
         self.timers = Timers()
-        self.pending = {}          # dns id -> Session
+        self.pending = {}
 
         self.lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.lsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -39,7 +36,6 @@ class Proxy:
         self.dsock.setblocking(False)
         self.sel.register(self.dsock, EV_R, _DNS)
 
-    # ------------------------------------------------------------- главный цикл
     def run(self):
         while True:
             for key, mask in self.sel.select(self.timers.next_timeout()):
@@ -74,12 +70,11 @@ class Proxy:
             self.drop_remote(s)
             self.connect_next(s)
 
-    # ------------------------------------------------------------- accept
     def on_accept(self):
         for _ in range(64):
             try:
                 conn, _ = self.lsock.accept()
-            except OSError:        # в т.ч. BlockingIOError — очередь пуста
+            except OSError:
                 return
             conn.setblocking(False)
             try:
@@ -90,7 +85,6 @@ class Proxy:
             self.timers.set(s, config.HANDSHAKE_TIMEOUT)
             self.update(s)
 
-    # ------------------------------------------------------------- подписки селектора
     @staticmethod
     def client_events(s):
         ev = 0
@@ -170,7 +164,6 @@ class Proxy:
         s.c2r.clear()
         s.r2c.clear()
 
-    # ------------------------------------------------------------- события сокетов
     def on_client(self, s, mask):
         if mask & EV_R:
             if s.state in (GREETING, REQUEST):
@@ -191,7 +184,6 @@ class Proxy:
             return
         self.progress(s)
 
-    # ------------------------------------------------------------- рукопожатие
     def read_handshake(self, s):
         try:
             data = s.csock.recv(config.HS_RECV_SIZE)
@@ -232,7 +224,7 @@ class Proxy:
             return
         used, atyp, host, s.port = res
         del hs[:used]
-        s.c2r.extend(hs)           # данные, присланные клиентом сразу вслед за запросом
+        s.c2r.extend(hs)
         hs.clear()
         self.start_connect(s, atyp, host)
 
@@ -245,7 +237,6 @@ class Proxy:
         s.state = CLOSING
         self.progress(s)
 
-    # ------------------------------------------------------------- резолвинг
     def start_connect(self, s, atyp, host):
         if atyp == socks5.ATYP_IPV4:
             s.addrs = [host]
@@ -256,7 +247,7 @@ class Proxy:
         except ValueError:
             self.reply_error(s, socks5.REP_HOST)
             return
-        try:                       # доменное имя может оказаться IPv4-литералом
+        try:
             s.addrs = [str(ipaddress.IPv4Address(name))]
             self.connect_next(s)
             return
@@ -276,7 +267,7 @@ class Proxy:
                 break
         s.dns_id = qid
         self.pending[qid] = s
-        self.update(s)             # пока резолвим, клиента не слушаем
+        self.update(s)
         self.send_dns(s)
 
     def send_dns(self, s):
@@ -284,7 +275,7 @@ class Proxy:
         try:
             self.dsock.sendto(dns_message.build_query(s.dns_id, s.qwire), self.resolver)
         except OSError:
-            pass                   # потерянный запрос = сработает тайм-аут и повтор
+            pass
         self.timers.set(s, config.DNS_TIMEOUT)
 
     def on_dns(self):
@@ -294,7 +285,7 @@ class Proxy:
             except (BlockingIOError, InterruptedError):
                 return
             except ConnectionError:
-                continue           # Windows: ICMP port unreachable
+                continue
             except OSError:
                 return
             if addr != self.resolver or len(data) < 2:
@@ -315,7 +306,6 @@ class Proxy:
             s.addrs = addrs
             self.connect_next(s)
 
-    # ------------------------------------------------------------- подключение к серверу
     def connect_next(self, s):
         while s.addrs:
             ip = s.addrs.pop(0)
@@ -366,7 +356,6 @@ class Proxy:
         self.timers.cancel(s)
         self.progress(s)
 
-    # ------------------------------------------------------------- передача данных
     def relay_read(self, s, from_client):
         src, buf = (s.csock, s.c2r) if from_client else (s.rsock, s.r2c)
         if len(buf) >= config.BUF_SIZE:
@@ -406,7 +395,6 @@ class Proxy:
             pass
 
     def progress(self, s):
-        """Отправляет накопленное, обрабатывает half-close и обновляет подписки."""
         if s.closed:
             return
         self.flush(s, True)

@@ -1,5 +1,3 @@
-"""Определение адреса DNS-резолвера."""
-
 import ipaddress
 import os
 import re
@@ -8,7 +6,6 @@ import sys
 
 
 def parse_hostport(text):
-    """'1.1.1.1:53' -> ('1.1.1.1', 53). ValueError при неверном формате."""
     host, _, port = text.rpartition(":")
     ipaddress.IPv4Address(host)
     port = int(port)
@@ -18,7 +15,6 @@ def parse_hostport(text):
 
 
 def system_resolver():
-    """Системный DNS (IPv4) и порт 53."""
     try:
         with open("/etc/resolv.conf") as f:
             for line in f:

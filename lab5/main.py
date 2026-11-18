@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""Точка входа: python3 main.py <port> [dns_ip:port]"""
-
 import sys
 
 from proxy import Proxy

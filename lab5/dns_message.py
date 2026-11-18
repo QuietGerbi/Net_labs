@@ -1,11 +1,8 @@
-"""Формирование и разбор DNS-сообщений (только A-запросы по UDP)."""
-
 import socket
 import struct
 
 
 def decode_hostname(raw):
-    """bytes из SOCKS-запроса -> ASCII-имя (punycode при необходимости). ValueError при ошибке."""
     try:
         return raw.decode("ascii")
     except UnicodeDecodeError:
@@ -31,12 +28,10 @@ def encode_name(name):
 
 
 def build_query(qid, qname_wire):
-    """RD=1, один вопрос, QTYPE=A, QCLASS=IN."""
     return struct.pack("!HHHHHH", qid, 0x0100, 1, 0, 0, 0) + qname_wire + struct.pack("!HH", 1, 1)
 
 
 def read_name(data, off):
-    """(имя в нижнем регистре, смещение после имени в исходном потоке)."""
     labels = []
     end = None
     jumps = 0
@@ -61,13 +56,10 @@ def read_name(data, off):
 
 
 def parse_response(data, expected_name):
-    """None — пакет игнорировать (не ответ / чужой вопрос);
-    иначе список IPv4-адресов (пустой — ошибка резолвинга: RCODE != 0,
-    усечённый ответ TC=1 без адресов, нет A-записей)."""
     if len(data) < 12:
         return None
     _, flags, qd, an, _, _ = struct.unpack("!HHHHHH", data[:12])
-    if not flags & 0x8000:           # QR=0 — это не ответ
+    if not flags & 0x8000:
         return None
     try:
         if qd != 1:
