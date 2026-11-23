@@ -1,4 +1,3 @@
-"""Диалог создания игры."""
 from __future__ import annotations
 
 import tkinter as tk

@@ -1,4 +1,3 @@
-"""Логика ведущего узла (MASTER): состояние игры, приём запросов, рассылка, анонсы."""
 from __future__ import annotations
 
 from typing import Dict, List, Optional
@@ -11,7 +10,7 @@ from .proto import snakes_pb2 as pb
 
 
 class MasterMixin:
-    # ------------------------------------------------------------ инициализация
+
     def _init_master_fields(self) -> None:
         self.next_tick = 0.0
         self.pending_dirs: Dict[int, int] = {}
@@ -24,14 +23,13 @@ class MasterMixin:
         self.leave_deadline = 0.0
 
     def start_as_master(self, config: Config, invite_server: bool = False) -> None:
-        """Создатель получает ID 1, роль MASTER и статус PLAYING."""
         from .session import Phase
 
         now = self.clock()
         world = World(self.game_name, config, state_order=0, next_player_id=2)
         world.players.append(Player(1, self.player_name, pb.MASTER, pb.PLAYING))
         snake = rules.find_spawn(world, self.rng)
-        if snake is None:  # на пустом поле такого быть не может
+        if snake is None:
             raise ValueError("Не удалось разместить змейку")
         snake.player_id = 1
         world.snakes.append(snake)
@@ -44,7 +42,7 @@ class MasterMixin:
         self.version += 1
         self._announce(now)
 
-    # ------------------------------------------------------------------- цикл
+
     def _m_tick(self, now: float) -> None:
         from .session import Phase
 
@@ -56,7 +54,7 @@ class MasterMixin:
             return
 
         w = self.world
-        # Потеря связи с участником: удаляем его и его змейку.
+
         lost = [p for p in w.players
                 if p.id != self.my_id and p.endpoint and self.out.silence(p.endpoint) > C.LINK_TIMEOUT]
         if lost:
@@ -86,13 +84,8 @@ class MasterMixin:
         rules.step(self.world, dirs)
         self._commit()
 
-    # --------------------------------------------------- публикация состояния
-    def _commit(self, notify_master: bool = False) -> None:
-        """Любое изменение состояния: пополнить еду, увеличить state_order, разослать всем.
 
-        notify_master=True — новый MASTER после failover сначала уведомляет всех
-        через NodeRoleChange(sender_role=MASTER), затем рассылает State.
-        """
+    def _commit(self, notify_master: bool = False) -> None:
         w = self.world
         rules.replenish_food(w, self.rng)
         if w.state_order >= C.INT32_MAX:
@@ -111,7 +104,6 @@ class MasterMixin:
         self.version += 1
 
     def _ensure_deputy(self) -> None:
-        """Если участников >= 2, должен быть ровно один DEPUTY (любой NORMAL, включая наблюдателей)."""
         w = self.world
         if len(w.players) < 2 or w.deputy() is not None:
             return
@@ -142,7 +134,7 @@ class MasterMixin:
         if p.endpoint:
             self.out.drop_endpoint(p.endpoint)
 
-    # ----------------------------------------------------------------- анонсы
+
     def _can_join(self) -> bool:
         w = self.world
         return (len(w.players) < C.MAX_PLAYERS and w.next_player_id < C.INT32_MAX
@@ -181,7 +173,7 @@ class MasterMixin:
     def _on_announcement(self, msg, ep: Endpoint, now: float) -> None:
         self._c_on_announcement(msg, ep, now)
 
-    # ------------------------------------------------- приём сообщений (MASTER)
+
     def _ack_sender_ok(self, msg, ep: Endpoint) -> bool:
         if not self.is_master:
             return self._c_ack_sender_ok(msg, ep)
@@ -197,7 +189,7 @@ class MasterMixin:
         seq = msg.msg_seq
         verdict, cached = self.dedup.check(ep, seq)
         known = self.world.player_at(ep)
-        if verdict == "dup":  # повтор получает прежний ответ, операция не выполняется заново
+        if verdict == "dup":
             if known:
                 self.out.touch(ep)
             for data in cached:
@@ -207,7 +199,7 @@ class MasterMixin:
             return
         if t == "join":
             if not self.dedup.can_admit(ep):
-                return  # бюджет кеша исчерпан: новых endpoint не допускаем
+                return
             responses = self._m_join(msg, ep, now, known)
         else:
             if known is None or not self._ids_ok(msg, known):
@@ -220,9 +212,9 @@ class MasterMixin:
                 "leave": self._m_leave,
             }.get(t)
             if handler is None:
-                return  # State/NodeRoleChange/Error от участников MASTER не принимает
+                return
             responses = handler(msg, ep, known, now)
-        if responses is not None:  # только корректные сообщения продвигают окно
+        if responses is not None:
             self.dedup.record(ep, seq, responses)
 
     def _ids_ok(self, msg, player: Player) -> bool:
@@ -234,16 +226,16 @@ class MasterMixin:
         m = envelope(self.game_name, self.my_id, receiver_id)
         m.error.error_message = clip_error_text(text)
         m.error.request_seq = req.msg_seq
-        self.out.send(ep, m)  # собственный msg_seq, подтверждается ACK
+        self.out.send(ep, m)
         return m.SerializeToString()
 
-    # --- обработчики ---
+
     def _m_ping(self, msg, ep, player, now) -> List[bytes]:
         return [self._reply_ack(ep, msg)]
 
     def _m_join(self, msg, ep: Endpoint, now: float, existing: Optional[Player]) -> Optional[List[bytes]]:
         w = self.world
-        if existing is not None:  # тот же endpoint: возвращаем имеющийся ID, змейку не создаём
+        if existing is not None:
             return [self._reply_ack(ep, msg, receiver_id=existing.id)]
         j = msg.join
         if j.game_name != self.game_name:
@@ -272,13 +264,13 @@ class MasterMixin:
             snake.player_id = pid
             w.snakes.append(snake)
         self.out.link(ep).last_recv = now
-        ack = self._reply_ack(ep, msg, receiver_id=pid)  # сначала ACK с выданным ID, затем State
+        ack = self._reply_ack(ep, msg, receiver_id=pid)
         self._commit()
         return [ack]
 
     def _m_steer(self, msg, ep, player: Player, now) -> List[bytes]:
         ack = self._reply_ack(ep, msg)
-        if msg.msg_seq > self.steer_seq.get(player.id, -1):  # запоздавшая команда не отменяет новую
+        if msg.msg_seq > self.steer_seq.get(player.id, -1):
             self.steer_seq[player.id] = msg.msg_seq
             snake = self.world.snake_of(player.id)
             d = msg.steer.direction
@@ -290,10 +282,10 @@ class MasterMixin:
     def _m_status_change(self, msg, ep, player: Player, now) -> List[bytes]:
         w = self.world
         if msg.msg_seq <= self.status_seq.get(player.id, -1):
-            return [self._reply_ack(ep, msg)]  # устаревший запрос: подтверждаем без применения
+            return [self._reply_ack(ep, msg)]
         self.status_seq[player.id] = msg.msg_seq
         target = msg.player_status_change.status
-        if target == player.status:  # текущий статус: ACK и актуальный State без нового state_order
+        if target == player.status:
             ack = self._reply_ack(ep, msg)
             self._broadcast_state(only=player)
             return [ack]
@@ -320,7 +312,7 @@ class MasterMixin:
         self._commit()
         return [ack]
 
-    # ------------------------------------------------ действия самого MASTER
+
     def _m_local_steer(self, direction: int) -> None:
         snake = self.world.snake_of(self.my_id)
         c = self.world.config
@@ -345,18 +337,17 @@ class MasterMixin:
             self.pending_dirs.pop(me.id, None)
             self._commit()
 
-    # --------------------------------------------- выход ведущего узла из игры
+
     def _m_begin_leave(self, now: float) -> None:
-        """State -> DEPUTY (ждём ACK), затем NodeRoleChange(NORMAL->MASTER) (ждём ACK)."""
         from .session import Phase
 
         w = self.world
         dep = w.deputy()
         if dep is None or dep.endpoint is None or len(w.players) < 2:
-            self.phase = Phase.CLOSED  # некому передавать (или игра закончена)
+            self.phase = Phase.CLOSED
             self.version += 1
             return
-        for p in w.players:  # прочие повторы больше не нужны
+        for p in w.players:
             if p.id not in (self.my_id, dep.id) and p.endpoint:
                 self.out.drop_endpoint(p.endpoint)
         self.phase = Phase.LEAVING
@@ -376,7 +367,7 @@ class MasterMixin:
             m = envelope(self.game_name, self.my_id, dep.id)
             m.node_role_change.sender_role = pb.NORMAL
             m.node_role_change.receiver_role = pb.MASTER
-            m.node_role_change.state_order = w.state_order + 1  # следующее состояние нового MASTER
+            m.node_role_change.state_order = w.state_order + 1
             self.leave_stage = "role"
             self.leave_seq = self.out.send(dep.endpoint, m)
             return

@@ -1,4 +1,3 @@
-"""Цвета и подписи интерфейса."""
 from ..proto import snakes_pb2 as pb
 
 BG = "#1b1d24"
@@ -8,7 +7,7 @@ GRID = "#1d2029"
 BORDER = "#4a4f63"
 TEXT = "#e8e9ee"
 MUTED = "#9aa0b4"
-HINT = "#555a6b"  # для ttk-подписей на светлой панели
+HINT = "#555a6b"
 FOOD = "#ff5d73"
 ERROR = "#ff6b6b"
 NOTICE = "#ffc857"

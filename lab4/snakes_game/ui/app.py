@@ -1,4 +1,3 @@
-"""Главное окно: переключает экраны по состоянию Node и передаёт команды сетевому потоку."""
 from __future__ import annotations
 
 import tkinter as tk
@@ -18,7 +17,7 @@ MESSAGE_TTL_MS = 8000
 KEYS = {
     "w": pb.UP, "up": pb.UP, "a": pb.LEFT, "left": pb.LEFT,
     "s": pb.DOWN, "down": pb.DOWN, "d": pb.RIGHT, "right": pb.RIGHT,
-    "ц": pb.UP, "ф": pb.LEFT, "ы": pb.DOWN, "в": pb.RIGHT,  # русская раскладка
+    "ц": pb.UP, "ф": pb.LEFT, "ы": pb.DOWN, "в": pb.RIGHT,
 }
 
 
@@ -54,7 +53,7 @@ class App:
         self.root.after(POLL_MS, self._poll)
         self.root.mainloop()
 
-    # ---------------------------------------------------------------- команды
+
     def _join(self, row, status: int) -> None:
         name = self.lobby.player_name()
         self.runner.send("join", row.name, row.endpoint, status, name)
@@ -77,9 +76,9 @@ class App:
 
     def _on_close(self) -> None:
         self._closing = True
-        self.runner.send("quit")  # корректный выход: Leave/передача роли MASTER, затем остановка потока
+        self.runner.send("quit")
 
-    # ------------------------------------------------------------------ опрос
+
     def _poll(self) -> None:
         if self._closing and not self.runner.alive:
             self.root.destroy()
@@ -113,7 +112,6 @@ class App:
         self._shown = frame
 
     def _flash(self, text: str, color: str) -> None:
-        """Сообщение в строке состояния: не блокирует работу программы."""
         self.message.config(text=text, fg=color)
         if self._message_job:
             self.root.after_cancel(self._message_job)

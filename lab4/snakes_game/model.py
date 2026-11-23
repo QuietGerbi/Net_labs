@@ -1,4 +1,3 @@
-"""Модель данных игры. Не зависит ни от сети, ни от интерфейса."""
 from __future__ import annotations
 
 import dataclasses
@@ -38,7 +37,6 @@ def validate_game_name(name: str) -> None:
 
 
 def is_valid_ipv4(text: str) -> bool:
-    """Четыре десятичных октета без ведущих нулей, до 15 ASCII-байт."""
     if not text or len(text) > 15 or not text.isascii():
         return False
     parts = text.split(".")
@@ -69,7 +67,7 @@ class Config:
 
     @classmethod
     def from_proto(cls, p: "pb.GameConfig") -> "Config":
-        # Отсутствующие optional-поля дают значения по умолчанию из схемы.
+
         cfg = cls(p.width, p.height, p.food_static, p.state_delay_ms)
         cfg.validate()
         return cfg
@@ -104,7 +102,7 @@ class Player:
 @dataclass
 class Snake:
     player_id: int
-    cells: List[Cell]  # голова первой; все клетки тела, нормализованные по тору
+    cells: List[Cell]
     direction: int
 
     @property
@@ -114,7 +112,6 @@ class Snake:
 
 @dataclass
 class World:
-    """Полное состояние игры: GameState + конфиг + имя игры."""
 
     game_name: str
     config: Config
@@ -124,7 +121,7 @@ class World:
     players: List[Player] = field(default_factory=list)
     next_player_id: int = 1
 
-    # --- запросы ---
+
     def player(self, player_id: Optional[int]) -> Optional[Player]:
         for p in self.players:
             if p.id == player_id:
@@ -152,7 +149,7 @@ class World:
     def target_food(self) -> int:
         return self.config.food_static + len(self.snakes)
 
-    # --- копирование (снимок для интерфейса) ---
+
     def clone(self) -> "World":
         return World(
             game_name=self.game_name,

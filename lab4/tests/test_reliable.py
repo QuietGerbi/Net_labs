@@ -101,7 +101,7 @@ class DedupTests(unittest.TestCase):
         d = DedupTable()
         d.record(self.ep, 2000, [b"x"])
         self.assertEqual(d.check(self.ep, 2000 - 1024)[0], "old")
-        self.assertEqual(d.check(self.ep, 2000 - 1023)[0], "new")  # окно: H-1023..H
+        self.assertEqual(d.check(self.ep, 2000 - 1023)[0], "new")
 
     def test_gaps_allowed_and_memory_bounded(self):
         d = DedupTable()

@@ -1,4 +1,3 @@
-"""Перечень локальных IPv4-интерфейсов для multicast."""
 from __future__ import annotations
 
 import socket
@@ -12,7 +11,7 @@ def _fallback() -> List[str]:
             ips.append(info[4][0])
     except OSError:
         pass
-    try:  # адрес интерфейса маршрута по умолчанию (пакеты не отправляются)
+    try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("192.0.2.1", 9))
         ips.append(s.getsockname()[0])
@@ -24,10 +23,9 @@ def _fallback() -> List[str]:
 
 
 def local_ipv4_addresses() -> List[str]:
-    """IPv4-адреса всех поднятых интерфейсов (psutil, если установлен)."""
     ips: List[str] = []
     try:
-        import psutil  # type: ignore
+        import psutil
 
         stats = psutil.net_if_stats()
         for name, addrs in psutil.net_if_addrs().items():

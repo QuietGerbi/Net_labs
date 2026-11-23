@@ -1,4 +1,3 @@
-"""Преобразования World <-> protobuf и кодирование змейки «ключевыми точками»."""
 from __future__ import annotations
 
 from typing import List, Optional
@@ -9,9 +8,9 @@ from .model import (Cell, Config, Endpoint, Player, Snake, World, is_valid_ipv4,
 from .proto import snakes_pb2 as pb
 
 
-# ---------------------------------------------------------------- змейка
+
 def _set_coord(coord, x: int, y: int) -> None:
-    # Нулевые компоненты не записываем (значение по умолчанию — 0).
+
     if x:
         coord.x = x
     if y:
@@ -31,7 +30,7 @@ def encode_snake(snake: Snake, width: int, height: int) -> "pb.GameState.Snake":
     p = pb.GameState.Snake(player_id=snake.player_id, head_direction=snake.direction)
     hx, hy = snake.cells[0]
     _set_coord(p.points.add(), hx, hy)
-    seg_dx = seg_dy = 0  # накапливаемый отрезок
+    seg_dx = seg_dy = 0
     cur_step: Optional[tuple] = None
     for (ax, ay), (bx, by) in zip(snake.cells, snake.cells[1:]):
         if ax != bx:
@@ -78,7 +77,7 @@ def decode_snake(p: "pb.GameState.Snake", width: int, height: int) -> Snake:
     return Snake(p.player_id, cells, p.head_direction)
 
 
-# ---------------------------------------------------------------- игроки
+
 def player_to_proto(p: Player, hide_endpoint: bool) -> "pb.GamePlayer":
     gp = pb.GamePlayer(name=p.name, id=p.id, role=p.role, score=p.score, status=p.status)
     if p.type != pb.HUMAN:
@@ -90,14 +89,13 @@ def player_to_proto(p: Player, hide_endpoint: bool) -> "pb.GamePlayer":
 
 
 def players_to_proto(world: World, sender_id: Optional[int]) -> "pb.GamePlayers":
-    """Endpoint отправителя опускается: получатель берёт его из UDP-пакета."""
     gps = pb.GamePlayers()
     for p in world.players:
         gps.players.append(player_to_proto(p, hide_endpoint=(p.id == sender_id)))
     return gps
 
 
-# ---------------------------------------------------------------- состояние
+
 def world_to_state(world: World, sender_id: Optional[int]) -> "pb.GameState":
     w, h = world.config.width, world.config.height
     st = pb.GameState(state_order=world.state_order, next_player_id=world.next_player_id)
@@ -111,7 +109,6 @@ def world_to_state(world: World, sender_id: Optional[int]) -> "pb.GameState":
 
 def world_from_proto(st: "pb.GameState", config: Config, game_name: str,
                      sender_ep: Endpoint) -> World:
-    """Разбирает и проверяет снимок; ValueError — снимок некорректен."""
     if st.state_order < 0:
         raise ValueError("отрицательный state_order")
     gps = st.players.players
@@ -140,7 +137,7 @@ def world_from_proto(st: "pb.GameState", config: Config, game_name: str,
         player = Player(gp.id, gp.name, gp.role, gp.status, gp.score, gp.type, ip, port)
         if gp.role == pb.MASTER:
             masters += 1
-            player.ip, player.port = sender_ep  # адрес отправителя берётся из UDP-пакета
+            player.ip, player.port = sender_ep
         ids.add(gp.id)
         players.append(player)
     if masters != 1:

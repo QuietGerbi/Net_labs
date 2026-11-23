@@ -1,4 +1,3 @@
-"""Сетевой поток и поток-резолвер DNS. Число потоков фиксировано: 2 (+ поток интерфейса)."""
 from __future__ import annotations
 
 import logging
@@ -35,7 +34,6 @@ class NetworkRunner:
             self._dns.start()
 
     def send(self, *command) -> None:
-        """Потокобезопасная команда сетевому потоку."""
         self._commands.put(command)
 
     def join(self, timeout: float = 3.0) -> None:
@@ -44,7 +42,7 @@ class NetworkRunner:
     def stop(self) -> None:
         self._stop.set()
 
-    # ------------------------------------------------------------------ потоки
+
     def _net_loop(self) -> None:
         node = self.node
         while not self._stop.is_set() and not node.should_stop():
@@ -65,7 +63,6 @@ class NetworkRunner:
         self._stop.set()
 
     def _dns_loop(self) -> None:
-        """DNS-имя сервера разрешается в IPv4 отдельным потоком, чтобы не блокировать сеть."""
         while not self._stop.is_set():
             wait = 5.0
             try:

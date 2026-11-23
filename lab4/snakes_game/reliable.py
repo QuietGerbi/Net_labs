@@ -1,4 +1,3 @@
-"""Надёжная доставка поверх UDP: ACK, повторы, окно дедупликации, Ping, связь с соседями."""
 from __future__ import annotations
 
 from typing import Callable, Dict, List, Optional, Tuple
@@ -10,14 +9,13 @@ from .proto import snakes_pb2 as pb
 
 
 class Link:
-    """Состояние связи с одним соседом."""
 
     __slots__ = ("last_send", "last_recv", "max_req_seq")
 
     def __init__(self, now: float) -> None:
         self.last_send = now
-        self.last_recv = now  # старт таймера связи
-        self.max_req_seq = -1  # наибольший отправленный номер сообщения, требующего ответа
+        self.last_recv = now
+        self.max_req_seq = -1
 
 
 class Pending:
@@ -31,7 +29,6 @@ class Pending:
 
 
 class Outbox:
-    """Исходящие сообщения сессии: нумерация, повторы каждые 100 мс, лимиты очереди."""
 
     def __init__(self, sock, clock: Callable[[], float]) -> None:
         self.sock = sock
@@ -40,7 +37,7 @@ class Outbox:
         self.pending: Dict[int, Pending] = {}
         self.links: Dict[Endpoint, Link] = {}
 
-    # ------------------------------------------------------------ счётчик
+
     def next_seq(self) -> int:
         if self._seq >= C.INT64_MAX:
             raise ProtocolError("Исчерпан счётчик msg_seq")
@@ -48,7 +45,7 @@ class Outbox:
         self._seq += 1
         return seq
 
-    # ------------------------------------------------------------- связь
+
     def link(self, ep: Endpoint) -> Link:
         lk = self.links.get(ep)
         if lk is None:
@@ -56,7 +53,6 @@ class Outbox:
         return lk
 
     def touch(self, ep: Endpoint) -> None:
-        """Любое корректное unicast-сообщение (включая ACK) обновляет таймер связи."""
         self.link(ep).last_recv = self.clock()
 
     def silence(self, ep: Endpoint) -> float:
@@ -65,7 +61,7 @@ class Outbox:
     def idle(self, ep: Endpoint) -> float:
         return self.clock() - self.link(ep).last_send
 
-    # --------------------------------------------------------- отправка
+
     def emit_raw(self, ep: Endpoint, data: bytes) -> None:
         self.sock.sendto(data, ep)
         self.link(ep).last_send = self.clock()
@@ -75,18 +71,13 @@ class Outbox:
 
     def send(self, ep: Endpoint, msg: "pb.GameMessage", reliable: bool = True,
              key: Optional[str] = None) -> int:
-        """Присваивает msg_seq и отправляет.
-
-        reliable=True — сообщение ждёт ACK и повторяется. key задаёт «заменяемый» тип
-        (state/steer/ping): новое сообщение вытесняет неподтверждённое старое.
-        """
         msg.msg_seq = self.next_seq()
         if reliable:
             lk = self.link(ep)
             if key is not None:
                 for seq in [s for s, p in self.pending.items() if p.ep == ep and p.key == key]:
                     del self.pending[seq]
-            # Запрос мог выйти из окна дедупликации получателя: прекращаем его повторы.
+
             for seq in [s for s, p in self.pending.items()
                         if p.ep == ep and s <= msg.msg_seq - C.DEDUP_WINDOW]:
                 del self.pending[seq]
@@ -97,7 +88,6 @@ class Outbox:
         return msg.msg_seq
 
     def _enforce_queue_limit(self, ep: Endpoint) -> None:
-        """Не более 64 неподтверждённых к соседу: вытесняем только заменяемые, операции не теряем."""
         mine = [(s, p) for s, p in self.pending.items() if p.ep == ep]
         excess = len(mine) - (C.MAX_PENDING_PER_PEER - 1)
         for seq, p in sorted(mine):
@@ -109,7 +99,6 @@ class Outbox:
 
     def send_ack(self, ep: Endpoint, request: "pb.GameMessage", game_name: str,
                  sender_id: Optional[int], receiver_id: Optional[int]) -> bytes:
-        """ACK копирует msg_seq запроса и не расходует счётчик отправителя."""
         ack = envelope(game_name, sender_id, receiver_id)
         ack.msg_seq = request.msg_seq
         ack.ack.SetInParent()
@@ -117,11 +106,11 @@ class Outbox:
         self.emit_raw(ep, data)
         return data
 
-    # ----------------------------------------------------- подтверждения
+
     def take(self, ep: Endpoint, seq: int) -> Optional[Pending]:
         p = self.pending.get(seq)
         if p is None or p.ep != ep:
-            return None  # несопоставленный ACK игнорируется
+            return None
         del self.pending[seq]
         return p
 
@@ -129,7 +118,6 @@ class Outbox:
         self.pending.pop(seq, None)
 
     def drop_endpoint(self, ep: Endpoint) -> None:
-        """Сосед удалён: его повторы прекращаются."""
         for seq in [s for s, p in self.pending.items() if p.ep == ep]:
             del self.pending[seq]
         self.links.pop(ep, None)
@@ -138,7 +126,6 @@ class Outbox:
         self.pending.clear()
 
     def retarget(self, old: Endpoint, new: Endpoint, receiver_id: int) -> None:
-        """Failover: неподтверждённые запросы к старому MASTER уходят новому (номер и тело те же)."""
         for seq in [s for s, p in self.pending.items() if p.ep == old]:
             p = self.pending[seq]
             if p.key == "ping":
@@ -146,10 +133,10 @@ class Outbox:
                 continue
             p.ep = new
             p.msg.receiver_id = receiver_id
-            p.sent_at = float("-inf")  # повторить немедленно
+            p.sent_at = float("-inf")
         self.links.pop(old, None)
 
-    # ------------------------------------------------------------ повторы
+
     def retransmit(self) -> None:
         now = self.clock()
         for p in list(self.pending.values()):
@@ -167,11 +154,6 @@ class _Window:
 
 
 class DedupTable:
-    """Окно дедупликации в 1024 номера для каждого endpoint (внутри одной игры).
-
-    Окно хранит номера max(0, H-1023)..H и ответы на них. Повтор получает прежний ответ,
-    номер ниже окна игнорируется. Окна вышедших endpoint живут до конца игры.
-    """
 
     def __init__(self, max_endpoints: int = C.MAX_DEDUP_ENDPOINTS) -> None:
         self.windows: Dict[Endpoint, _Window] = {}

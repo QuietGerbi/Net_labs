@@ -1,9 +1,3 @@
-"""Игровая сессия: один UDP-сокет, один Outbox, одна игра.
-
-Сессия сама решает, чем она сейчас является (MASTER или клиент NORMAL/DEPUTY),
-и может переходить из клиента в MASTER при failover. Логика ролей — в миксинах.
-Сессия однопоточная: её вызывает только сетевой поток Node/Runner.
-"""
 from __future__ import annotations
 
 import logging
@@ -23,15 +17,14 @@ log = logging.getLogger(__name__)
 
 
 class Phase:
-    CONNECTING = "connecting"  # клиент ещё не получил ACK/конфиг/первый State
+    CONNECTING = "connecting"
     ACTIVE = "game"
-    LEAVING = "leaving"        # ждём ACK на Leave / передачу роли MASTER
+    LEAVING = "leaving"
     CLOSED = "closed"
 
 
 @dataclass
 class SessionContext:
-    """Зависимости, которые сессии даёт Node."""
 
     server_ep: Callable[[], Optional[Endpoint]]
     interfaces: Callable[[], List[str]]
@@ -57,16 +50,15 @@ class Session(MasterMixin, ClientMixin):
         self.world: Optional[World] = None
         self.my_id: Optional[int] = None
         self.error: Optional[str] = None
-        self.version = 0                     # растёт при любом изменении, видимом в интерфейсе
+        self.version = 0
         self.notices: List[Tuple[int, str]] = []
         self._notice_counter = 0
         self._init_master_fields()
         self._init_client_fields()
 
-    # ------------------------------------------------------------ публичное API
+
     @property
     def wants_discovery(self) -> bool:
-        """Нужен ли каталог игр (поиск нового анонса после отказа MASTER при подключении)."""
         return self.phase == Phase.CONNECTING and not self.is_master and not self.join_acked
 
     @property
@@ -119,7 +111,7 @@ class Session(MasterMixin, ClientMixin):
         except ProtocolError as e:
             self.fail(str(e))
 
-    # ------------------------------------------------------------------- цикл
+
     def tick(self) -> None:
         if self.phase == Phase.CLOSED:
             return
@@ -161,7 +153,7 @@ class Session(MasterMixin, ClientMixin):
         except ProtocolError as e:
             self.fail(str(e))
 
-    # -------------------------------------------------------------- ответы
+
     def _reply_ack(self, ep: Endpoint, req: "pb.GameMessage",
                    receiver_id: Optional[int] = None) -> bytes:
         if receiver_id is None and req.HasField("sender_id"):
@@ -169,7 +161,6 @@ class Session(MasterMixin, ClientMixin):
         return self.out.send_ack(ep, req, self.game_name, self.my_id, receiver_id)
 
     def _on_ack(self, msg: "pb.GameMessage", ep: Endpoint, now: float) -> None:
-        """ACK обрабатывается отдельно: не попадает в кеш запросов и не подтверждается."""
         if not self._ack_sender_ok(msg, ep):
             return
         known = self._is_known_neighbor(ep)

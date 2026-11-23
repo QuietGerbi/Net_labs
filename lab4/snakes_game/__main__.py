@@ -1,4 +1,3 @@
-"""Точка входа: python -m snakes_game"""
 from __future__ import annotations
 
 import argparse

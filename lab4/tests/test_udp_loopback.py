@@ -1,4 +1,3 @@
-"""Сквозной тест на настоящих UDP-сокетах (127.0.0.1): два Node в одном процессе."""
 import time
 import unittest
 
@@ -27,7 +26,7 @@ class LoopbackTest(unittest.TestCase):
             ra.send("create_local", "game1", "Alice", Config(15, 15, 1, 100), False)
             self.assertTrue(wait_for(lambda: a.session is not None and a.session.is_master))
             port = a.session.sock.port
-            # Подменяем multicast: передаём анонс напрямую (в песочнице multicast может быть недоступен).
+
             data = a.session._announcement_message().SerializeToString()
             b._on_lobby_datagram(data, ("127.0.0.1", port), b.clock(), True)
             self.assertTrue(wait_for(lambda: len(b._games(b.clock())) == 1))
@@ -39,7 +38,7 @@ class LoopbackTest(unittest.TestCase):
             w = rb.view.world
             self.assertEqual({p.name for p in w.players}, {"Alice", "Bob"})
             before = rb.view.world.state_order
-            self.assertTrue(wait_for(lambda: rb.view.world.state_order > before + 3))  # игра идёт
+            self.assertTrue(wait_for(lambda: rb.view.world.state_order > before + 3))
             rb.send("status", False)
             self.assertTrue(wait_for(lambda: next(p for p in rb.view.world.players if p.name == "Bob").status == pb.VIEWING))
             rb.send("leave")

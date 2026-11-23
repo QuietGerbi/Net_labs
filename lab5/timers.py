@@ -25,14 +25,12 @@ class Timers:
                 return
 
     def next_timeout(self):
-        """Сколько секунд ждать в select() (None — бесконечно)."""
         self._discard_stale()
         if not self._heap:
             return None
         return max(0.0, self._heap[0][0] - time.monotonic())
 
     def pop_expired(self):
-        """Итератор по сессиям, чей таймер сработал."""
         now = time.monotonic()
         while self._heap and self._heap[0][0] <= now:
             _, _, s, gen = heapq.heappop(self._heap)

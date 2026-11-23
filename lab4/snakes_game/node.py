@@ -1,8 +1,3 @@
-"""Node — верхний уровень приложения: лобби (поиск игр), запуск и завершение сессий.
-
-Node однопоточный: его вызывает только сетевой поток (NetworkRunner). Интерфейс
-общается с ним через очередь команд и читает неизменяемый снимок View.
-"""
 from __future__ import annotations
 
 import logging
@@ -25,7 +20,6 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class GameRow:
-    """Строка списка игр для интерфейса."""
 
     name: str
     endpoint: Endpoint
@@ -40,18 +34,17 @@ class GameRow:
 
 @dataclass(frozen=True)
 class View:
-    """Неизменяемый снимок состояния для интерфейса."""
 
     version: int
-    phase: str                         # lobby | connecting | game | leaving
+    phase: str
     games: Tuple[GameRow, ...]
-    server_state: str                  # off | resolving | silent | ok
+    server_state: str
     world: Optional[World]
     my_id: Optional[int]
     is_master: bool
     status_pending: bool
-    notice: Optional[Tuple[int, str]]  # (номер, текст) — последнее неблокирующее сообщение
-    error: Optional[Tuple[int, str]]   # (номер, текст) — ошибка завершённой сессии
+    notice: Optional[Tuple[int, str]]
+    error: Optional[Tuple[int, str]]
 
 
 class Node:
@@ -60,13 +53,13 @@ class Node:
         self.clock = clock
         self.use_server = use_server
         self.server_host, self.server_port = server_host, server_port
-        self.server_ip: Optional[str] = None          # заполняет поток-резолвер
+        self.server_ip: Optional[str] = None
         self._last_server_announce = float("-inf")
 
         self.catalog = GameCatalog()
         try:
             self.mcast: Optional[MulticastReceiver] = MulticastReceiver()
-        except OSError as e:  # отсутствие multicast не мешает серверному каталогу
+        except OSError as e:
             log.warning("Multicast недоступен: %s", e)
             self.mcast = None
         self.lobby_sock = UdpSocket()
@@ -93,7 +86,7 @@ class Node:
         self._version = 0
         self.view = self._build_view(self.clock())
 
-    # ------------------------------------------------------------------ сервер
+
     @property
     def server_ep(self) -> Optional[Endpoint]:
         if not self.use_server or not self.server_ip:
@@ -107,7 +100,7 @@ class Node:
             return "resolving"
         return "ok" if now - self._last_server_announce <= C.ANNOUNCE_TTL else "silent"
 
-    # ----------------------------------------------------------------- сокеты
+
     def sockets(self) -> list:
         socks = [self.lobby_sock]
         if self.mcast is not None:
@@ -124,7 +117,7 @@ class Node:
                     self.session.on_datagram(data, ep)
                 else:
                     self._on_lobby_datagram(data, ep, now, from_multicast=sock is self.mcast)
-            except Exception:  # одна плохая датаграмма не должна ронять сетевой поток
+            except Exception:
                 log.exception("Ошибка обработки датаграммы от %s", ep)
 
     def _on_lobby_datagram(self, data: bytes, ep: Endpoint, now: float, from_multicast: bool) -> None:
@@ -137,10 +130,10 @@ class Node:
             source = SOURCE_SERVER
             self._last_server_announce = now
         else:
-            source = SOURCE_LAN  # прямой ответ MASTER
+            source = SOURCE_LAN
         self.catalog.update(msg, ep, source, now)
 
-    # --------------------------------------------------------------- команды UI
+
     def handle_command(self, cmd: tuple) -> None:
         name, args = cmd[0], cmd[1:]
         try:
@@ -179,7 +172,6 @@ class Node:
         self.session = s
 
     def _cmd_create_server(self, game_name: str, player_name: str) -> None:
-        """Создание игры на сервере курса: JoinMsg с новым именем игры."""
         if self._busy():
             return
         ep = self.server_ep
@@ -222,7 +214,7 @@ class Node:
     def should_stop(self) -> bool:
         return self.quit_requested and (self.session is None or self.clock() >= self._quit_deadline)
 
-    # -------------------------------------------------------------------- цикл
+
     def tick(self) -> None:
         now = self.clock()
         if now - self._ifaces_at >= C.IFACE_REFRESH_INTERVAL:
@@ -232,7 +224,7 @@ class Node:
                 self.mcast.join_interfaces(self._ifaces)
         self.catalog.prune(now)
 
-        # Пока показан список игр (или идёт поиск нового анонса) опрашиваем сервер курса.
+
         if (self.session is None or self.session.wants_discovery) and self.server_ep is not None:
             if now - self._last_discover >= C.DISCOVER_INTERVAL:
                 self._last_discover = now
@@ -249,7 +241,6 @@ class Node:
         self._publish(now)
 
     def _pull_session_notice(self) -> None:
-        """Неблокирующие сообщения сессии (например, «нет места») переносим в общий notice."""
         notices = self.session.notices
         if notices and notices[-1][0] > self._seen_session_notice:
             self._seen_session_notice = notices[-1][0]
@@ -273,7 +264,7 @@ class Node:
         if self.mcast is not None:
             self.mcast.close()
 
-    # -------------------------------------------------------------------- вид
+
     def _games(self, now: float) -> Tuple[GameRow, ...]:
         return tuple(
             GameRow(e.name, e.endpoint, e.players, e.config.width, e.config.height,

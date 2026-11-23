@@ -1,4 +1,3 @@
-"""Логика клиента (NORMAL/DEPUTY): подключение, приём состояния, failover."""
 from __future__ import annotations
 
 from typing import List, Optional
@@ -18,13 +17,13 @@ class ClientMixin:
         self.join_status = pb.PLAYING
         self.join_started = 0.0
         self.join_acked = False
-        self.buffered = None            # (State, receiver_id) с наибольшим state_order до активации
+        self.buffered = None
         self.last_cfg_discover = float("-inf")
         self.alt_deadline: Optional[float] = None
-        self.failover_done = False      # уже переключались на DEPUTY и ждём его State
-        self.status_pending = False     # запрос смены статуса отправлен, ждём State
+        self.failover_done = False
+        self.status_pending = False
 
-    # ----------------------------------------------------------- подключение
+
     def start_as_client(self, ep: Endpoint, status: int, config: Optional[Config]) -> None:
         self.master_ep = ep
         self.config = config
@@ -40,14 +39,13 @@ class ClientMixin:
         j.player_name = self.player_name
         j.game_name = self.game_name
         j.requested_status = self.join_status
-        self.join_seq = self.out.send(self.master_ep, m)  # повторы Join каждые 100 мс
+        self.join_seq = self.out.send(self.master_ep, m)
         self.join_started = now
         self.join_acked = False
         self.alt_deadline = None
         self.out.link(self.master_ep).last_recv = now
 
     def _c_on_announcement(self, msg, ep: Endpoint, now: float) -> None:
-        """Конфиг принимается из Announcement выбранного endpoint с выбранным game_name."""
         from .session import Phase
 
         if self.is_master or self.phase != Phase.CONNECTING or ep != self.master_ep:
@@ -73,7 +71,7 @@ class ClientMixin:
             return
         state, receiver_id = self.buffered
         if receiver_id is not None and receiver_id != self.my_id:
-            self.buffered = None  # State адресован не нам
+            self.buffered = None
             return
         try:
             world = codec.world_from_proto(state, self.config, self.game_name, self.master_ep)
@@ -96,7 +94,7 @@ class ClientMixin:
         self.failover_done = False
         self.version += 1
 
-    # --------------------------------------------------------------- цикл
+
     def _c_tick(self, now: float) -> None:
         from .session import Phase
 
@@ -127,14 +125,14 @@ class ClientMixin:
             self.fail("Не удалось подключиться: нет ответа за 5 секунд")
             return
         if not self.join_acked:
-            # MASTER молчит: ищем новый анонс с тем же game_name (возможно, прошёл failover).
+
             if self.out.silence(self.master_ep) > C.LINK_TIMEOUT:
                 if self.alt_deadline is None:
                     self.alt_deadline = now + C.REJOIN_SEARCH_TIMEOUT
                 alt = self.ctx.find_alternative(self.game_name, self.master_ep)
                 if alt is not None:
                     self.out.drop_endpoint(self.master_ep)
-                    self.master_ep = alt  # смена endpoint начинает новую попытку подключения
+                    self.master_ep = alt
                     self._send_join()
                     return
                 if now > self.alt_deadline:
@@ -147,7 +145,7 @@ class ClientMixin:
         m.msg_seq = self.out.next_seq()
         return m.SerializeToString()
 
-    # ---------------------------------------------------------- команды UI
+
     def _c_steer(self, direction: int) -> None:
         me = self.my_player()
         snake = self.world.snake_of(self.my_id) if self.world else None
@@ -169,7 +167,7 @@ class ClientMixin:
         want = pb.PLAYING if playing else pb.VIEWING
         m = envelope(self.game_name, self.my_id, self.master_id)
         m.player_status_change.status = want
-        self.out.send(self.master_ep, m)  # управляющая операция: не вытесняется
+        self.out.send(self.master_ep, m)
         self.status_pending = True
         self.version += 1
 
@@ -187,7 +185,7 @@ class ClientMixin:
         self.leave_deadline = now + C.LEAVE_TIMEOUT
         self.version += 1
 
-    # ------------------------------------------------------- приём (клиент)
+
     def _c_ack_sender_ok(self, msg, ep: Endpoint) -> bool:
         if ep != self.master_ep:
             return False
@@ -259,7 +257,7 @@ class ClientMixin:
         st = msg.state.state
         rid = msg.receiver_id if msg.HasField("receiver_id") else None
         if self.phase == Phase.CONNECTING:
-            # До ACK/конфига храним только снимок с наибольшим state_order.
+
             if st.state_order < 0:
                 return None
             if self.buffered is None or st.state_order > self.buffered[0].state_order:
@@ -270,10 +268,10 @@ class ClientMixin:
         try:
             world = codec.world_from_proto(st, self.config, self.game_name, ep)
         except ValueError:
-            return None  # некорректный снимок игнорируется
+            return None
         ack = self._reply_ack(ep, msg)
         if world.state_order <= self.world.state_order:
-            return [ack]  # устаревший: подтверждаем, но не применяем
+            return [ack]
         if world.player(self.my_id) is None:
             self.fail("Вы удалены из игры (MASTER потерял связь с вами)")
             return [ack]
@@ -300,8 +298,8 @@ class ClientMixin:
         w = self.world
         if w is None:
             return [ack]
-        stale = n.state_order < w.state_order  # устаревшее уведомление подтверждается без применения
-        if ep != self.master_ep:  # объявление нового MASTER от известного DEPUTY
+        stale = n.state_order < w.state_order
+        if ep != self.master_ep:
             if not stale:
                 self._switch_master(ep, now)
             return [ack]
@@ -314,12 +312,12 @@ class ClientMixin:
                 self.version += 1
         elif (n.HasField("sender_role") and n.sender_role == pb.NORMAL
               and n.HasField("receiver_role") and n.receiver_role == pb.MASTER):
-            if me is not None and me.role == pb.DEPUTY:  # осознанный выход MASTER
+            if me is not None and me.role == pb.DEPUTY:
                 self.dedup.record(ep, msg.msg_seq, [ack])
                 self._become_master(now, order_hint=n.state_order)
         return [ack]
 
-    # --------------------------------------------------------------- failover
+
     def _switch_master(self, ep: Endpoint, now: float) -> None:
         dep = self.world.player_at(ep)
         if dep is None or ep == self.master_ep:
@@ -346,7 +344,6 @@ class ClientMixin:
         self._switch_master(dep_ep, now)
 
     def _become_master(self, now: float, order_hint: Optional[int] = None) -> None:
-        """DEPUTY становится MASTER: продолжает последнюю принятую копию, удаляет прежнего MASTER."""
         from .session import Phase
 
         w = self.world

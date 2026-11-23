@@ -1,4 +1,3 @@
-"""Экран выбора игры: единый список из LAN и сервера курса."""
 from __future__ import annotations
 
 import tkinter as tk

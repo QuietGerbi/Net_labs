@@ -1,4 +1,3 @@
-"""Построение и разбор GameMessage."""
 from __future__ import annotations
 
 from typing import Optional
@@ -8,12 +7,11 @@ from .proto import snakes_pb2 as pb
 
 
 class ProtocolError(Exception):
-    """Нарушение протокола, после которого игру нужно завершить (например, пакет >1200 байт)."""
+    pass
 
 
 def envelope(game_name: Optional[str], sender_id: Optional[int] = None,
              receiver_id: Optional[int] = None) -> "pb.GameMessage":
-    """Оболочка без msg_seq (его проставляет Outbox)."""
     m = pb.GameMessage()
     m.msg_seq = 0
     m.protocol_version = C.PROTOCOL_VERSION
@@ -27,13 +25,12 @@ def envelope(game_name: Optional[str], sender_id: Optional[int] = None,
 
 
 def parse_message(data: bytes) -> Optional["pb.GameMessage"]:
-    """Возвращает сообщение либо None, если датаграмма некорректна и должна быть проигнорирована."""
     if not data or len(data) > C.MAX_DATAGRAM_SIZE:
         return None
     m = pb.GameMessage()
     try:
         m.ParseFromString(data)
-    except Exception:  # DecodeError и пр.
+    except Exception:
         return None
     if m.protocol_version != C.PROTOCOL_VERSION or m.msg_seq < 0:
         return None

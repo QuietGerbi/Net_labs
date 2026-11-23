@@ -1,4 +1,3 @@
-"""Игровой экран: поле, участники, управление."""
 from __future__ import annotations
 
 import tkinter as tk
@@ -76,7 +75,7 @@ class GameFrame(ttk.Frame):
         me = self._world.player(self._my_id) if self._world else None
         return me is not None and me.status == pb.PLAYING
 
-    # ------------------------------------------------------------- отрисовка
+
     def _draw(self) -> None:
         c, w = self.canvas, self._world
         c.delete("all")

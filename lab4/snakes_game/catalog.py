@@ -1,4 +1,3 @@
-"""Единый список игр из двух источников (LAN multicast и сервер курса)."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -19,7 +18,7 @@ class GameEntry:
     config: Config
     players: int
     can_join: bool
-    seen: Dict[str, float] = field(default_factory=dict)  # источник -> время последнего анонса
+    seen: Dict[str, float] = field(default_factory=dict)
 
     @property
     def key(self) -> Tuple[str, Endpoint]:
@@ -30,7 +29,6 @@ class GameEntry:
 
 
 class GameCatalog:
-    """Записи объединяются по (game_name, endpoint MASTER) и устаревают независимо через 3 с."""
 
     def __init__(self) -> None:
         self._entries: Dict[Tuple[str, Endpoint], GameEntry] = {}
@@ -64,7 +62,6 @@ class GameCatalog:
         return self._entries.get((name, ep))
 
     def find_alternative(self, name: str, exclude: Endpoint, now: float) -> Optional[Endpoint]:
-        """Другая запись с тем же game_name (поиск нового MASTER после его отказа)."""
         for e in self.entries(now):
             if e.name == name and e.endpoint != exclude:
                 return e.endpoint

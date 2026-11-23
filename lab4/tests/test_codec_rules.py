@@ -23,21 +23,21 @@ class CodecTests(unittest.TestCase):
         s = Snake(1, cells, pb.RIGHT)
         p = codec.encode_snake(s, 10, 10)
         self.assertEqual(codec.decode_snake(p, 10, 10).cells, cells)
-        # смещения осевые и ненулевые, нулевая компонента не записана
+
         for off in p.points[1:]:
             self.assertEqual((off.x != 0) + (off.y != 0), 1)
 
     def test_long_straight_snake_crossing_border(self):
         cells = [((5 - i) % 20, 3) for i in range(12)]
         p = codec.encode_snake(Snake(1, cells, pb.RIGHT), 20, 10)
-        self.assertEqual(len(p.points), 2)  # голова + один отрезок
+        self.assertEqual(len(p.points), 2)
         self.assertEqual(p.points[1].x, -11)
         self.assertEqual(codec.decode_snake(p, 20, 10).cells, cells)
 
     def test_decode_rejects_garbage(self):
         p = pb.GameState.Snake(player_id=1, head_direction=pb.UP)
         p.points.add()
-        p.points.add()  # нулевое смещение
+        p.points.add()
         with self.assertRaises(ValueError):
             codec.decode_snake(p, 10, 10)
 
@@ -48,7 +48,7 @@ class CodecTests(unittest.TestCase):
             p = Player(2 ** 31 - 10 + i, "я" * 12, pb.NORMAL if i else pb.MASTER, pb.PLAYING if i < 4 else pb.VIEWING,
                        2 ** 31 - 1, pb.ROBOT, "255.255.255.255", 65535)
             w.players.append(p)
-        for i in range(4):  # 32 клетки, поворот на каждом шаге (лесенка)
+        for i in range(4):
             x, y, cells = 90 + i, 50 + i * 10, []
             for k in range(32):
                 cells.append((x, y))
@@ -148,7 +148,7 @@ class RulesTests(unittest.TestCase):
     def test_self_collision_no_points(self):
         w = world()
         add(w, 1, [(2, 2), (3, 2), (3, 3), (2, 3), (1, 3), (1, 2)], pb.LEFT)
-        # голова идёт вниз в (2,3) — тело
+
         dead = rules.step(w, {1: pb.DOWN})
         self.assertEqual(dead, [1])
         self.assertEqual(w.players[0].score, 0)
@@ -157,17 +157,17 @@ class RulesTests(unittest.TestCase):
 
     def test_chase_freed_tail_is_safe_but_not_when_eating(self):
         w = world()
-        add(w, 1, [(5, 5), (5, 6), (5, 7)], pb.UP)       # преследуемая
-        add(w, 2, [(4, 7), (3, 7)], pb.RIGHT)            # голова входит в хвост (5,7)
+        add(w, 1, [(5, 5), (5, 6), (5, 7)], pb.UP)
+        add(w, 2, [(4, 7), (3, 7)], pb.RIGHT)
         rules.step(w, {})
         self.assertEqual(len(w.snakes), 2)
         w = world()
         add(w, 1, [(5, 5), (5, 6), (5, 7)], pb.UP)
         add(w, 2, [(4, 7), (3, 7)], pb.RIGHT)
-        w.foods = [(5, 4)]                               # преследуемая ест => хвост остаётся
+        w.foods = [(5, 4)]
         dead = rules.step(w, {})
         self.assertEqual(dead, [2])
-        self.assertEqual(w.players[0].score, 2)          # еда + врезавшаяся голова
+        self.assertEqual(w.players[0].score, 2)
 
     def test_head_on_both_die_each_scores(self):
         w = world()
@@ -192,7 +192,7 @@ class RulesTests(unittest.TestCase):
         w.foods = [(5, 5)]
         dead = rules.step(w, {})
         self.assertEqual(sorted(dead), [1, 2, 3])
-        self.assertEqual([p.score for p in w.players], [3, 3, 3])  # N-1 + еда
+        self.assertEqual([p.score for p in w.players], [3, 3, 3])
 
     def test_score_saturates(self):
         w = world()

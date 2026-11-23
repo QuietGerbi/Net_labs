@@ -1,4 +1,3 @@
-"""Виртуальная сеть и часы для детерминированных тестов сессий."""
 import random
 from collections import deque
 

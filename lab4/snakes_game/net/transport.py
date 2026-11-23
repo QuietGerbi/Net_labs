@@ -1,4 +1,3 @@
-"""UDP-сокеты: игровой (unicast + отправка multicast) и приёмник multicast-группы."""
 from __future__ import annotations
 
 import logging
@@ -22,13 +21,12 @@ def _recv_all(sock: socket.socket) -> List[Tuple[bytes, Endpoint]]:
         except (BlockingIOError, InterruptedError):
             break
         except OSError:
-            continue  # например, WSAECONNRESET на Windows после ICMP unreachable
+            continue
         out.append((data, (addr[0], addr[1])))
     return out
 
 
 class UdpSocket:
-    """Игровой сокет: bind на порт, выбранный ОС. Через него идёт всё, включая multicast-анонсы."""
 
     def __init__(self) -> None:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -53,7 +51,6 @@ class UdpSocket:
             return False
 
     def send_multicast(self, data: bytes, interface_ips: Iterable[str]) -> int:
-        """Отправляет в группу через каждый интерфейс; ошибка одного не мешает остальным."""
         sent = 0
         for ip in interface_ips:
             try:
@@ -75,7 +72,6 @@ class UdpSocket:
 
 
 class MulticastReceiver:
-    """Сокет, который только принимает multicast 239.192.0.4:9193 на всех интерфейсах."""
 
     def __init__(self) -> None:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -93,7 +89,6 @@ class MulticastReceiver:
         return self.sock.fileno()
 
     def join_interfaces(self, interface_ips: Iterable[str]) -> None:
-        """Подписывается на группу на каждом интерфейсе; новые интерфейсы подхватываются при повторе."""
         group = socket.inet_aton(C.MULTICAST_GROUP)
         for ip in interface_ips:
             if ip in self._joined:
