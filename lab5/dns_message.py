@@ -65,20 +65,38 @@ def parse_response(data, expected_name):
         if qd != 1:
             return None
         name, off = read_name(data, 12)
+        qtype, qclass = struct.unpack("!HH", data[off:off + 4])
         off += 4
-        if name != expected_name:
+        if name != expected_name or qtype != 1 or qclass != 1:
             return None
         if flags & 0x000F:
             return []
-        addrs = []
+        addresses_by_name = {}
+        cname_by_name = {}
         for _ in range(an):
-            _, off = read_name(data, off)
+            owner, off = read_name(data, off)
             rtype, rclass, _ttl, rdlen = struct.unpack("!HHIH", data[off:off + 10])
             off += 10
+            rdata_off = off
             rdata = data[off:off + rdlen]
             off += rdlen
             if rtype == 1 and rclass == 1 and rdlen == 4 and len(rdata) == 4:
-                addrs.append(socket.inet_ntoa(rdata))
-        return addrs
+                addresses_by_name.setdefault(owner, []).append(socket.inet_ntoa(rdata))
+            elif rtype == 5 and rclass == 1:
+                target, target_end = read_name(data, rdata_off)
+                if target_end != rdata_off + rdlen:
+                    return []
+                previous = cname_by_name.setdefault(owner, target)
+                if previous != target:
+                    return []
+
+        current = expected_name
+        visited = set()
+        while current in cname_by_name:
+            if current in visited:
+                return []
+            visited.add(current)
+            current = cname_by_name[current]
+        return addresses_by_name.get(current, [])
     except (IndexError, struct.error, ValueError):
         return []

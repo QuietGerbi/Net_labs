@@ -2,7 +2,6 @@ import ipaddress
 import os
 import re
 import subprocess
-import sys
 
 
 def parse_hostport(text):
@@ -35,5 +34,4 @@ def system_resolver():
                 return m.group(1), 53
         except Exception:
             pass
-    print("Не удалось определить системный DNS, используется 8.8.8.8:53", file=sys.stderr)
-    return "8.8.8.8", 53
+    raise RuntimeError("Не удалось определить системный IPv4 DNS-резолвер")

@@ -41,6 +41,8 @@ def parse_request(buf):
         return None
     if buf[0] != VER:
         raise ProtocolError()
+    if buf[2] != 0x00:
+        raise ProtocolError(REP_FAIL)
     if buf[1] != CMD_CONNECT:
         raise ProtocolError(REP_CMD)
     atyp = buf[3]

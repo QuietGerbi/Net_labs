@@ -48,15 +48,21 @@ class Proxy:
                     s, is_client = data
                     if s.closed:
                         continue
-                    if is_client:
-                        self.on_client(s, mask)
-                    else:
-                        self.on_remote(s, mask)
+                    try:
+                        if is_client:
+                            self.on_client(s, mask)
+                        else:
+                            self.on_remote(s, mask)
+                    except Exception:
+                        self.close(s)
             for s in self.timers.pop_expired():
-                self.on_timeout(s)
+                try:
+                    self.on_timeout(s)
+                except Exception:
+                    self.close(s)
 
     def on_timeout(self, s):
-        if s.state in (GREETING, REQUEST):
+        if s.state in (GREETING, REQUEST, CLOSING):
             self.close(s)
         elif s.state == RESOLVING:
             if s.attempts < config.DNS_ATTEMPTS:
@@ -76,19 +82,38 @@ class Proxy:
                 conn, _ = self.lsock.accept()
             except OSError:
                 return
-            conn.setblocking(False)
+            s = None
+            try:
+                conn.setblocking(False)
+            except OSError:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+                continue
             try:
                 conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             except OSError:
                 pass
-            s = Session(conn)
-            self.timers.set(s, config.HANDSHAKE_TIMEOUT)
-            self.update(s)
+            try:
+                s = Session(conn)
+                self.timers.set(s, config.HANDSHAKE_TIMEOUT)
+                self.update(s)
+            except Exception:
+                if s is not None:
+                    self.close(s)
+                else:
+                    try:
+                        conn.close()
+                    except OSError:
+                        pass
 
     @staticmethod
     def client_events(s):
         ev = 0
         if s.state in (GREETING, REQUEST):
+            ev |= EV_R
+        elif s.state in (RESOLVING, CONNECTING) and not s.c_eof and len(s.c2r) < config.BUF_SIZE:
             ev |= EV_R
         elif s.state == RELAY and not s.c_eof and len(s.c2r) < config.BUF_SIZE:
             ev |= EV_R
@@ -134,7 +159,7 @@ class Proxy:
         if s.rmask:
             try:
                 self.sel.unregister(s.rsock)
-            except (KeyError, ValueError):
+            except Exception:
                 pass
         s.rmask = 0
         try:
@@ -154,7 +179,7 @@ class Proxy:
         if s.cmask:
             try:
                 self.sel.unregister(s.csock)
-            except (KeyError, ValueError):
+            except Exception:
                 pass
         s.cmask = 0
         try:
@@ -168,8 +193,10 @@ class Proxy:
         if mask & EV_R:
             if s.state in (GREETING, REQUEST):
                 self.read_handshake(s)
-            elif s.state == RELAY:
+            elif s.state in (RESOLVING, CONNECTING, RELAY):
                 self.relay_read(s, True)
+                if not s.closed and s.state in (RESOLVING, CONNECTING) and s.c_eof:
+                    self.close(s)
         if s.closed:
             return
         self.progress(s)
@@ -210,7 +237,7 @@ class Proxy:
                 s.r2c.extend(socks5.greeting_reply(no_auth_ok))
                 if not no_auth_ok:
                     s.state = CLOSING
-                    self.timers.cancel(s)
+                    self.timers.set(s, config.CLOSING_TIMEOUT)
                     return
                 s.state = REQUEST
             res = socks5.parse_request(hs)
@@ -235,6 +262,7 @@ class Proxy:
         self.drop_remote(s)
         s.r2c.extend(socks5.build_reply(rep))
         s.state = CLOSING
+        self.timers.set(s, config.CLOSING_TIMEOUT)
         self.progress(s)
 
     def start_connect(self, s, atyp, host):
@@ -261,10 +289,14 @@ class Proxy:
         s.qname = name.rstrip(".").lower()
         s.state = RESOLVING
         s.attempts = 0
-        while True:
-            qid = random.getrandbits(16)
+        start_id = random.getrandbits(16)
+        for offset in range(1 << 16):
+            qid = (start_id + offset) & 0xFFFF
             if qid not in self.pending:
                 break
+        else:
+            self.reply_error(s, socks5.REP_FAIL)
+            return
         s.dns_id = qid
         self.pending[qid] = s
         self.update(s)
@@ -294,22 +326,30 @@ class Proxy:
             s = self.pending.get(qid)
             if s is None or s.closed or s.state != RESOLVING:
                 continue
-            addrs = dns_message.parse_response(data, s.qname)
-            if addrs is None:
-                continue
-            del self.pending[qid]
-            s.dns_id = None
-            self.timers.cancel(s)
-            if not addrs:
-                self.reply_error(s, socks5.REP_HOST)
-                continue
-            s.addrs = addrs
-            self.connect_next(s)
+            try:
+                addrs = dns_message.parse_response(data, s.qname)
+                if addrs is None:
+                    continue
+                del self.pending[qid]
+                s.dns_id = None
+                self.timers.cancel(s)
+                if not addrs:
+                    self.reply_error(s, socks5.REP_HOST)
+                    continue
+                s.addrs = addrs
+                self.connect_next(s)
+            except Exception:
+                self.close(s)
 
     def connect_next(self, s):
         while s.addrs:
             ip = s.addrs.pop(0)
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            except OSError as e:
+                s.last_rep = rep_for_errno(e.errno or errno.EIO)
+                self.reply_error(s, s.last_rep)
+                return
             sock.setblocking(False)
             try:
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -358,10 +398,11 @@ class Proxy:
 
     def relay_read(self, s, from_client):
         src, buf = (s.csock, s.c2r) if from_client else (s.rsock, s.r2c)
-        if len(buf) >= config.BUF_SIZE:
+        remaining = config.BUF_SIZE - len(buf)
+        if remaining <= 0:
             return
         try:
-            data = src.recv(config.BUF_SIZE)
+            data = src.recv(remaining)
         except (BlockingIOError, InterruptedError):
             return
         except OSError:

@@ -22,7 +22,11 @@ def main():
             print("DNS-резолвер должен быть в формате IPv4:port", file=sys.stderr)
             return 2
     else:
-        resolver = system_resolver()
+        try:
+            resolver = system_resolver()
+        except RuntimeError as e:
+            print(str(e), file=sys.stderr)
+            return 2
     proxy = Proxy(port, resolver)
     print(f"SOCKS5-прокси слушает порт {port}, DNS: {resolver[0]}:{resolver[1]}", file=sys.stderr)
     try:
